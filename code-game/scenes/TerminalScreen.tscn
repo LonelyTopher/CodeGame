@@ -1,0 +1,53 @@
+[gd_scene load_steps=2 format=3 uid="uid://clox1ckx4a8x5"]
+
+[ext_resource type="Script" uid="uid://ti8tswqmnboh" path="res://Scripts/terminal_screen.gd" id="1_t11pa"]
+
+[node name="TerminalScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_t11pa")
+
+[node name="Background" type="ColorRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+color = Color(0, 0, 0, 1)
+
+[node name="VBox" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_left = 229.0
+offset_right = 1152.0
+offset_bottom = 648.0
+theme_override_constants/separation = 8
+
+[node name="Scroll" type="ScrollContainer" parent="VBox"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="Output" type="RichTextLabel" parent="VBox/Scroll"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_colors/default_color = Color(0, 0.49803922, 0, 1)
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="InputRow" type="HBoxContainer" parent="VBox"]
+layout_mode = 2
+
+[node name="Prompt" type="Label" parent="VBox/InputRow"]
+layout_mode = 2
+text = ">"
+
+[node name="Input" type="LineEdit" parent="VBox/InputRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Type a command . . ."
