@@ -110,8 +110,7 @@ func mkdir(path: String) -> bool:
 
 	var parent := _get_parent_dir(path)
 	if parent.is_empty() and path != "/":
-		# If creating "/home" and root has no children, parent is root:
-		# _get_parent_dir("/home") returns "/" which is valid; so this should not happen often.
+		# If creating "/home" and root has no children, parent is root.
 		parent = root
 
 	var name := _base_name(path)
@@ -141,7 +140,7 @@ func touch(path: String) -> bool:
 	return true
 
 func write_file(path: String, content: String) -> bool:
-	# auto-create parent dir? we’ll keep it strict for now:
+	# strict: parent must exist as dir; but you were defaulting to root, so we keep that behavior
 	var parent := _get_parent_dir(path)
 	if parent.is_empty():
 		parent = root
@@ -153,6 +152,8 @@ func write_file(path: String, content: String) -> bool:
 	children[name] = {"type":"file", "content": content}
 	return true
 
+# --- Your original generic remove (kept) ---
+# Removes a file OR directory entry from its parent (subtree disappears if it's a dir).
 func remove(path: String) -> bool:
 	if path == "/" or path.strip_edges() == "":
 		return false
@@ -165,6 +166,55 @@ func remove(path: String) -> bool:
 		return false
 	children.erase(name)
 	return true
+
+# --- New: rm helpers that CmdRm expects ---
+
+# Only deletes if the target is a file.
+func remove_file(path: String) -> bool:
+	if path == "/" or path.strip_edges() == "":
+		return false
+
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		return false
+
+	var name := _base_name(path)
+	var children: Dictionary = parent["children"]
+
+	if not children.has(name):
+		return false
+
+	if children[name].get("type", "") != "file":
+		return false
+
+	children.erase(name)
+	return true
+
+# Deletes a directory and everything inside it (recursive).
+# With this tree model, removing the directory entry removes the whole subtree.
+func remove_dir_recursive(path: String) -> bool:
+	if path == "/" or path.strip_edges() == "":
+		return false
+	if not is_dir(path):
+		return false
+	return remove(path)
+
+# Optional: only remove directory if empty (if you ever want strict rm behavior)
+func remove_dir(path: String) -> bool:
+	if path == "/" or path.strip_edges() == "":
+		return false
+	if not is_dir(path):
+		return false
+
+	var dir := _get_dir_node(path)
+	if dir.is_empty():
+		return false
+
+	var children: Dictionary = dir["children"]
+	if not children.is_empty():
+		return false
+
+	return remove(path)
 
 # ---------- Persistence ----------
 func to_data() -> Dictionary:

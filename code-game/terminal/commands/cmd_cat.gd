@@ -1,7 +1,8 @@
 extends CommandBase
 class_name CmdCat
 
-func get_name() -> String: return "cat"
+func get_name() -> String:
+	return "cat"
 
 func get_help() -> String:
 	return "Display the contents of a file."
@@ -18,4 +19,8 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 			return ["cat: no such file: " + args[0]]
 		return [""] # empty file
 
-	return content.split("\n", false)
+# split() return PackedStringArray -> convert to Array[String] #
+	var packed: PackedStringArray = content.split("/n", false)
+	var lines: Array[String] = []
+	lines.assign(packed)
+	return lines
