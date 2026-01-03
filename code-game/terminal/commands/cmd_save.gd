@@ -19,6 +19,12 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		slot = args[0]
 
 	var ss := SaveSystem.new()
-	if ss.save_terminal(slot, terminal):
+	var state := ss.build_terminal_state(terminal)
+
+	# Add player device network identity
+	state["player_device"] = World.get_player_device_state()
+
+	if ss.save(slot, state):
 		return ["Saved: " + slot]
+
 	return ["save: failed"]

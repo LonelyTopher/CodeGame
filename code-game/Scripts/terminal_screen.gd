@@ -18,12 +18,17 @@ const SLOT_MANUAL := "save1"
 
 func _ready() -> void:
 	var popup := menu_btn.get_popup()
+
 	term = Terminal.new()
 	term.load_commands_from_dir("res://terminal/commands")
 
-	# Fresh virtual filesystem every launch (no persistence here)
-	term.fs = FileSystem.new()
-	term.cwd = "/home"
+	# IMPORTANT:
+	# World.current_device might not be ready yet depending on load order.
+	# So we defer one frame to be safe.
+	await get_tree().process_frame
+
+	# Use the real device + its filesystem (DO NOT create a new FileSystem here)
+	term.set_active_device(World.current_device, true)
 
 	_update_prompt()
 
@@ -31,7 +36,8 @@ func _ready() -> void:
 	input.grab_focus()
 
 	_print_line("[color=lime]Terminal ready:[/color] Type 'help' for a list of commands. . .")
-	
+
+	# Autosave (terminal state only)
 	if not saves.exists(SLOT_AUTO):
 		saves.save(SLOT_AUTO, term.get_state())
 
@@ -39,7 +45,7 @@ func _ready() -> void:
 	popup.add_item("Save Game", 0)
 	popup.add_item("Load Save", 1)
 	popup.add_item("Delete Save", 2)
-	
+
 	popup.id_pressed.connect(_on_menu_item_pressed)
 
 func _on_input_submitted(text: String) -> void:

@@ -23,6 +23,16 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if not ss.exists(slot):
 		return ["load: slot not found: " + slot]
 
-	if ss.load_terminal(slot, terminal):
-		return ["Loaded: " + slot]
-	return ["load: failed"]
+	var data := ss.load_slot(slot)
+	if data.is_empty():
+		return ["load: failed"]
+
+	# Restore terminal filesystem/cwd
+	ss.apply_terminal_state(terminal, data)
+
+	# Restore player device identity (MAC/IP/hostname)
+	var dev_state: Variant = data.get("player_device", {})
+	if typeof(dev_state) == TYPE_DICTIONARY:
+		World.apply_player_device_state(dev_state as Dictionary)
+
+	return ["Loaded: " + slot]

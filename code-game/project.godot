@@ -14,6 +14,10 @@ config/name="CodeGame"
 run/main_scene="uid://clox1ckx4a8x5"
 config/features=PackedStringArray("4.5", "Mobile")
 
+[autoload]
+
+World="*res://Systems/Network/world_network.gd"
+
 [rendering]
 
 renderer/rendering_method="mobile"
