@@ -5,7 +5,21 @@ func get_name() -> String:
 	return "cd"
 
 func get_help() -> String:
-	return "Change the current directory. ('cd ..' to go back 1 directory)"
+	return "Change the current directory. ('cd ..' to go back 1 directory)"	
+
+func get_usage() -> String:
+	return "cd [path]"
+
+func get_options() -> Array[Dictionary]:
+	return []
+
+func get_examples() -> Array[String]:
+	return [
+		"cd 			# go to /home",
+		"cd ..  		# go up one directory",
+		"cd projects	# enter a folder in the current directory",
+		"cd /home   	# go to an absolute path"
+	]
 
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	# cd → go home

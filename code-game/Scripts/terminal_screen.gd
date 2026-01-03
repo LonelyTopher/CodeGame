@@ -1,26 +1,46 @@
 extends Control
 
-@onready var output: RichTextLabel = $VBox/Scroll/Output
-@onready var scroll: ScrollContainer = $VBox/Scroll
-@onready var input: LineEdit = $VBox/InputRow/Input
-@onready var prompt: Label = $VBox/InputRow/Prompt
+# I hate this script #
+# however. it gave me a hella good Dr. Frankenstein "IT'S ALIVE" feeling #
 
+@onready var output: RichTextLabel = $VBox/Scroll/ScrollContent/Output
+@onready var prompt: Label = $VBox/InputRow/Prompt
+@onready var input: LineEdit = $VBox/InputRow/Input
+@onready var scroll: ScrollContainer = $VBox/Scroll
+@onready var menu_btn: MenuButton = $SideBar/ScrollContainer/VBoxContainer/MenuBtn
+
+var saves := SaveSystem.new()
 var term: Terminal
 
+const SAVE_SLOT := "save1"
+const SLOT_AUTO := "autosave"
+const SLOT_MANUAL := "save1"
+
 func _ready() -> void:
+	var popup := menu_btn.get_popup()
 	term = Terminal.new()
 	term.load_commands_from_dir("res://terminal/commands")
-	
+
+	# Fresh virtual filesystem every launch (no persistence here)
 	term.fs = FileSystem.new()
 	term.cwd = "/home"
+
 	_update_prompt()
-	
-	# Try load saved FS; if none exists, it stays default #
-	term.fs.load_from_user()
-	
+
 	input.text_submitted.connect(_on_input_submitted)
 	input.grab_focus()
+
 	_print_line("[color=lime]Terminal ready:[/color] Type 'help' for a list of commands. . .")
+	
+	if not saves.exists(SLOT_AUTO):
+		saves.save(SLOT_AUTO, term.get_state())
+
+	popup.clear()
+	popup.add_item("Save Game", 0)
+	popup.add_item("Load Save", 1)
+	popup.add_item("Delete Save", 2)
+	
+	popup.id_pressed.connect(_on_menu_item_pressed)
 
 func _on_input_submitted(text: String) -> void:
 	var line := text.strip_edges()
@@ -28,31 +48,33 @@ func _on_input_submitted(text: String) -> void:
 		call_deferred("_refocus_input")
 		return
 
-# Print the typed command #
-	_print_line("[color=lime]%s%s[/color]" % [prompt.text, line])
-	
-# Clear and refocus input #
-	input.clear()
-	call_deferred("_refocus_input")
+	# echo the command line with prompt
+	_print_line("[color=lime]%s %s[/color]" % [_prompt_text(), line])
 
-# Run the command #
+	# run the command through your Terminal
 	var results: Array[String] = term.execute(line)
 
 	for r in results:
 		if r == "__CLEAR__":
 			output.clear()
-			_print_line("Type 'help' for a list of commands. . .")
-		else:
-			_print_line(r)
-			
+			_print_line("Type 'help' for a list of commands")
+			# optional: snap scroll back to top
+			scroll.scroll_vertical = 0
+			continue
+		if line.begins_with("/"):
+			line = line.trim_prefix("/")
+
+		_print_line(r)
+
+	input.clear()
 	_update_prompt()
+	call_deferred("_refocus_input")
 
-	await get_tree().process_frame
-	_scroll_to_bottom()
-	input.grab_focus()
+	# optional: keep the output pinned to bottom after commands
+	call_deferred("_scroll_to_bottom")
 
-func _print_line(line: String) -> void:
-	output.append_text(line + "\n")
+func _print_line(t: String) -> void:
+	output.append_text(t + "\n")
 
 func _scroll_to_bottom() -> void:
 	scroll.scroll_vertical = int(output.get_content_height())
@@ -61,8 +83,86 @@ func _refocus_input() -> void:
 	input.grab_focus()
 
 func _update_prompt() -> void:
-	var display_path := term.cwd
-	if display_path.begins_with("/"):
-		display_path = display_path.substr(1) # remove leading "/"
-		
-	prompt.text = "C://" + display_path + "> "
+	prompt.text = _prompt_text()
+
+func _prompt_text() -> String:
+	# Matches the look you have: C://home>
+	# If you want it to show the real path formatting, tweak here.
+	return "C:%s> " % term.cwd
+
+func _on_save_pressed() -> void:
+	if term == null:
+		_print_line("[color=red]Save failed:[/color] Terminal not initialized.")
+		return
+
+	var state := term.get_state()
+
+	if state.is_empty():
+		_print_line("[color=red]Save failed:[/color] Invalid game state.")
+		return
+
+	var success := saves.save(SAVE_SLOT, state)
+
+	if success:
+		_print_line("[color=lime]Game saved successfully.[/color]")
+	else:
+		_print_line("[color=red]Save failed.[/color]")
+
+func _on_load_pressed() -> void:
+	if term == null:
+		_print_line("[color=red]Load failed:[/color] Terminal not initialized.")
+		return
+
+	# Prefer manual save if it exists, otherwise fall back to autosave
+	var slot := SLOT_MANUAL if saves.exists(SLOT_MANUAL) else SLOT_AUTO
+
+	var data: Dictionary = saves.load_slot(slot)
+	if data.is_empty():
+		_print_line("[color=red]Load failed:[/color] Save not found.")
+		return
+
+	var ok := term.set_state(data)
+	if not ok:
+		_print_line("[color=red]Load failed:[/color] Save data invalid/corrupted.")
+		return
+
+	_print_line("[color=lime]Loaded:[/color] %s" % slot)
+	_update_prompt()
+	call_deferred("_refocus_input")
+
+func _on_delete_pressed() -> void:
+	# Only delete the manual save slot, never delete autosave
+	if not saves.exists(SLOT_MANUAL):
+		_print_line("No manual save to delete.")
+		return
+
+	var ok := saves.delete(SLOT_MANUAL)
+	if ok:
+		_print_line("[color=lime]Deleted save:[/color] %s" % SLOT_MANUAL)
+	else:
+		_print_line("[color=red]Delete failed.[/color]")
+
+func _on_menu_item_pressed(id: int) -> void:
+	match id:
+		0:
+			_on_save_pressed()
+		1:
+			_on_load_pressed()
+		2:
+			_on_delete_pressed()
+
+func _on_menu_pressed() -> void:
+	var popup := menu_btn.get_popup()
+
+	# Make sure popup has its final size
+	popup.reset_size()
+	await get_tree().process_frame  # ensures size/rect updates
+
+	var btn_rect := menu_btn.get_global_rect()
+	var popup_size := popup.size
+
+	var popup_x := btn_rect.position.x + (btn_rect.size.x - popup_size.x) / 2.0
+	var popup_y := btn_rect.position.y + btn_rect.size.y
+
+	popup.position = Vector2(popup_x, popup_y)
+	popup.popup()

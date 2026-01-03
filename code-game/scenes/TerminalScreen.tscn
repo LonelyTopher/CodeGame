@@ -38,9 +38,16 @@ mouse_force_pass_scroll_events = false
 horizontal_scroll_mode = 3
 vertical_scroll_mode = 3
 
-[node name="Output" type="RichTextLabel" parent="VBox/Scroll"]
+[node name="ScrollContent" type="Control" parent="VBox/Scroll"]
 layout_mode = 2
 size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="Output" type="RichTextLabel" parent="VBox/Scroll/ScrollContent"]
+layout_mode = 0
+offset_right = 923.0
+offset_bottom = 610.0
+size_flags_vertical = 3
 focus_mode = 2
 mouse_filter = 1
 theme_override_colors/default_color = Color(0, 0.49803922, 0, 1)
@@ -50,8 +57,6 @@ theme_override_constants/table_v_separation = 1
 theme_override_fonts/normal_font = ExtResource("2_x0n36")
 theme_override_fonts/italics_font = ExtResource("3_y6s3v")
 bbcode_enabled = true
-fit_content = true
-scroll_active = false
 scroll_following = true
 selection_enabled = true
 
@@ -71,3 +76,25 @@ theme_override_font_sizes/font_size = 16
 placeholder_text = "   Type a command . . ."
 keep_editing_on_text_submit = true
 caret_blink = true
+
+[node name="SideBar" type="VBoxContainer" parent="."]
+layout_mode = 0
+offset_right = 228.0
+offset_bottom = 648.0
+
+[node name="ScrollContainer" type="ScrollContainer" parent="SideBar"]
+layout_mode = 2
+size_flags_vertical = 3
+draw_focus_border = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SideBar/ScrollContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MenuBtn" type="MenuButton" parent="SideBar/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+theme_override_fonts/font = ExtResource("2_x0n36")
+text = "Menu"
+
+[connection signal="pressed" from="SideBar/ScrollContainer/VBoxContainer/MenuBtn" to="." method="_on_menu_pressed"]

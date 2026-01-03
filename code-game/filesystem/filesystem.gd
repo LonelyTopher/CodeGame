@@ -5,15 +5,16 @@ class_name FileSystem
 # A directory is: { "type":"dir", "children": { name: node, ... } }
 # A file is:      { "type":"file", "content":"..." }
 
-var root := {
+var root: Dictionary = {
 	"type": "dir",
 	"children": {}
 }
 
 func _init() -> void:
-	# Start with /home + readme.txt
+	# Default seed: /home + readme.txt only
 	mkdir("/home")
-	write_file("/home/readme.txt",
+	write_file(
+		"/home/readme.txt",
 		"Welcome!\n\nType 'help' to see commands.\nTry: ls, cd home, cat readme.txt\n"
 	)
 
@@ -27,7 +28,7 @@ func _split_path(path: String) -> Array[String]:
 
 	var packed := p.split("/", false) # PackedStringArray
 	var parts: Array[String] = []
-	parts.assign(packed) # copies into typed Array[String]
+	parts.assign(packed)
 	return parts
 
 func _get_dir_node(path: String) -> Dictionary:
@@ -49,7 +50,7 @@ func _get_parent_dir(path: String) -> Dictionary:
 	# For "/home/readme.txt" -> returns node for "/home"
 	var parts := _split_path(path)
 	if parts.is_empty():
-		return {} # root has no parent for creation ops
+		return {}
 	parts.pop_back()
 	var parent_path := "/" + "/".join(parts) if not parts.is_empty() else "/"
 	return _get_dir_node(parent_path)
@@ -110,7 +111,6 @@ func mkdir(path: String) -> bool:
 
 	var parent := _get_parent_dir(path)
 	if parent.is_empty() and path != "/":
-		# If creating "/home" and root has no children, parent is root.
 		parent = root
 
 	var name := _base_name(path)
@@ -140,7 +140,7 @@ func touch(path: String) -> bool:
 	return true
 
 func write_file(path: String, content: String) -> bool:
-	# strict: parent must exist as dir; but you were defaulting to root, so we keep that behavior
+	# Strict would require parent exists; keeping your current behavior (fallback to root)
 	var parent := _get_parent_dir(path)
 	if parent.is_empty():
 		parent = root
@@ -152,7 +152,6 @@ func write_file(path: String, content: String) -> bool:
 	children[name] = {"type":"file", "content": content}
 	return true
 
-# --- Your original generic remove (kept) ---
 # Removes a file OR directory entry from its parent (subtree disappears if it's a dir).
 func remove(path: String) -> bool:
 	if path == "/" or path.strip_edges() == "":
@@ -166,8 +165,6 @@ func remove(path: String) -> bool:
 		return false
 	children.erase(name)
 	return true
-
-# --- New: rm helpers that CmdRm expects ---
 
 # Only deletes if the target is a file.
 func remove_file(path: String) -> bool:
@@ -199,7 +196,7 @@ func remove_dir_recursive(path: String) -> bool:
 		return false
 	return remove(path)
 
-# Optional: only remove directory if empty (if you ever want strict rm behavior)
+# Only remove directory if empty (strict)
 func remove_dir(path: String) -> bool:
 	if path == "/" or path.strip_edges() == "":
 		return false
@@ -216,33 +213,68 @@ func remove_dir(path: String) -> bool:
 
 	return remove(path)
 
-# ---------- Persistence ----------
+# Reads files and tells you if path is a file or directory #
+func is_file(path: String) -> bool:
+	if path == "/":
+		return false
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		return false
+	var name := _base_name(path)
+	var children: Dictionary = parent["children"]
+	return children.has(name) and children[name].get("type","") == "file"
+
+# Copy helper function #
+func copy_file(src: String, dest: String) -> bool:
+	if not is_file(src):
+		return false
+
+	# dest parent must exist and be a dir
+	var parent := _get_parent_dir(dest)
+	if parent.is_empty() and dest != "/":
+		parent = root
+
+	var dest_parent_path := "/"
+	var parts := _split_path(dest)
+	if parts.size() > 1:
+		parts.pop_back()
+		dest_parent_path = "/" + "/".join(parts)
+		if dest_parent_path == "":
+			dest_parent_path = "/"
+
+	if not is_dir(dest_parent_path):
+		return false
+
+	var content := read_file(src)
+	return write_file(dest, content)
+
+# Move command helper function #
+func move_file(src: String, dest: String) -> bool:
+	# src must be a file
+	if not is_file(src):
+		return false
+
+	# dest parent must exist as a directory
+	var parts := _split_path(dest)
+	var parent_path := "/"
+	if parts.size() > 1:
+		parts.pop_back()
+		parent_path = "/" + "/".join(parts)
+		if parent_path == "":
+			parent_path = "/"
+
+	if not is_dir(parent_path):
+		return false
+
+	# move = write new copy then delete original
+	var content := read_file(src)
+	if not write_file(dest, content):
+		return false
+
+	return remove_file(src)
+
 func to_data() -> Dictionary:
 	return root
 
 func from_data(data: Dictionary) -> void:
-	# minimal safety
-	if data.get("type","") == "dir" and data.has("children"):
-		root = data
-	else:
-		root = {"type":"dir","children": {}}
-
-func save_to_user(path: String = "user://fs.json") -> bool:
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f == null:
-		return false
-	f.store_string(JSON.stringify(to_data()))
-	return true
-
-func load_from_user(path: String = "user://fs.json") -> bool:
-	if not FileAccess.file_exists(path):
-		return false
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return false
-	var txt := f.get_as_text()
-	var parsed = JSON.parse_string(txt)
-	if typeof(parsed) == TYPE_DICTIONARY:
-		from_data(parsed)
-		return true
-	return false
+	root = data

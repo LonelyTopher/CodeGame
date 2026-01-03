@@ -80,3 +80,26 @@ func get_unique_command_names() -> Array[String]:
 	for k in unique.keys():
 		names.append(String(k))  # ensure it's a String
 	return names
+
+# Save Game Logic below this line #
+func get_state() -> Dictionary:
+	return {
+		"version": 1,
+		"cwd": cwd,
+		"fs": fs.root
+	}
+
+func set_state(data: Dictionary) -> bool:
+	if typeof(data) != TYPE_DICTIONARY:
+		return false
+	if not data.has("fs"):
+		return false
+
+	var fs_data = data["fs"]
+	if typeof(fs_data) != TYPE_DICTIONARY:
+		return false
+
+	# restore filesystem + cwd
+	fs.root = fs_data
+	cwd = str(data.get("cwd", "/home"))
+	return true

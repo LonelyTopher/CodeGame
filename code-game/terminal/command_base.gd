@@ -11,8 +11,15 @@ func get_help() -> String:
 	return ""
 
 func get_usage() -> String:
-	return ""
+	return get_name()
+
+func get_examples() -> Array[String]:
+	return []
+
+func get_options() -> Array[Dictionary]:
+	# Each option { "flag": "-r", "long": "--recursive", "desc": "..." }
+	return []
 
 # Returns lines to print #
 func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
-	return ["Not implemented"]
+	return ["Command not implemented"]

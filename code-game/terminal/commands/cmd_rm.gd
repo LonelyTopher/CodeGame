@@ -7,6 +7,20 @@ func get_name() -> String:
 func get_help() -> String:
 	return "Remove a file, or a directory with -r."
 
+func get_usage() -> String:
+	return "rm [-r] <path>"
+
+func get_examples() -> Array[String]:
+	return [
+		"rm notes.txt",
+		"rm -r projects",
+	]
+
+func get_options() -> Array[Dictionary]:
+	return [
+		{ "flag": "-r", "long": "--recursive", "desc": "Remove directories and their contents recursively." },
+	]
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["rm: missing operand"]

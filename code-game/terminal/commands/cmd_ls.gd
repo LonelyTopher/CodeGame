@@ -1,10 +1,24 @@
 extends CommandBase
 class_name CmdLs
 
-func get_name() -> String: return "ls"
+func get_name() -> String:
+	return "ls"
 
 func get_help() -> String:
-	return "List files and folders in the current directory."
+	return "List files and folders in the current, or specified directory."
+
+func get_usage() -> String:
+	return "ls [path]"
+
+func get_options() -> Array[Dictionary]:
+	return []  # no flags implemented yet
+
+func get_examples() -> Array[String]:
+	return [
+		"ls",
+		"ls /home",
+		"ls local"
+	]
 
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	var path := terminal.cwd

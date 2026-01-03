@@ -7,6 +7,19 @@ func get_name() -> String:
 func get_help() -> String:
 	return "Display the contents of a file."
 
+func get_usage() -> String:
+	return "cat <file>"
+
+func get_options() -> Array[Dictionary]:
+# No flags implemented yet #
+	return []
+
+func get_examples() -> Array[String]:
+	return [
+		"cat README.txt",
+		"cat notes.txt"
+	]
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["cat: missing file"]
