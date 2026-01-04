@@ -48,6 +48,7 @@ layout_mode = 0
 offset_right = 923.0
 offset_bottom = 610.0
 size_flags_vertical = 3
+focus_mode = 2
 mouse_filter = 1
 theme_override_colors/default_color = Color(0, 0.49803922, 0, 1)
 theme_override_constants/line_separation = -1
