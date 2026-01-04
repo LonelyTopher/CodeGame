@@ -19,12 +19,9 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		slot = args[0]
 
 	var ss := SaveSystem.new()
-	var state := ss.build_terminal_state(terminal)
 
-	# Add player device network identity
-	state["player_device"] = World.get_player_device_state()
-
-	if ss.save(slot, state):
-		return ["Saved: " + slot]
+	# Full save (same as the button): terminal + device + player + stats
+	if ss.save_game(slot, terminal):
+		return ["[color=lime]" + slot + " saved successfully.[/color]"]
 
 	return ["save: failed"]

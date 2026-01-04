@@ -45,9 +45,9 @@ func _ready() -> void:
 
 	_print_line("[color=lime]Terminal ready:[/color] Type 'help' for a list of commands. . .")
 
-	# Autosave (terminal state only)
+	# Autosave (FULL state: terminal + device + player + stats)
 	if not saves.exists(SLOT_AUTO):
-		saves.save(SLOT_AUTO, term.get_state())
+		saves.save_game(SLOT_AUTO, term)
 
 	popup.clear()
 	popup.add_item("Save Game", 0)
@@ -161,13 +161,7 @@ func _on_save_pressed() -> void:
 		_print_line("[color=red]Save failed:[/color] Terminal not initialized.")
 		return
 
-	var state := term.get_state()
-
-	if state.is_empty():
-		_print_line("[color=red]Save failed:[/color] Invalid game state.")
-		return
-
-	var success := saves.save(SAVE_SLOT, state)
+	var success := saves.save_game(SLOT_MANUAL, term)
 
 	if success:
 		_print_line("[color=lime]Game saved successfully.[/color]")
@@ -181,13 +175,11 @@ func _on_load_pressed() -> void:
 
 	# Prefer manual save if it exists, otherwise fall back to autosave
 	var slot := SLOT_MANUAL if saves.exists(SLOT_MANUAL) else SLOT_AUTO
-
-	var data: Dictionary = saves.load_slot(slot)
-	if data.is_empty():
+	if not saves.exists(slot):
 		_print_line("[color=red]Load failed:[/color] Save not found.")
 		return
 
-	var ok := term.set_state(data)
+	var ok := saves.load_game(slot, term)
 	if not ok:
 		_print_line("[color=red]Load failed:[/color] Save data invalid/corrupted.")
 		return

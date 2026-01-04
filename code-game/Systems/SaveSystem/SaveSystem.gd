@@ -163,7 +163,8 @@ func build_player_progress_state() -> Dictionary:
 
 	return {
 		"level": int(player.level),
-		"xp": int(player.xp)
+		"xp": int(player.xp),
+		"currencies": player.build_currency_state()
 	}
 
 func apply_player_progress_state(state: Dictionary) -> bool:
@@ -182,6 +183,10 @@ func apply_player_progress_state(state: Dictionary) -> bool:
 
 	player.level = lv
 	player.xp = xp
+
+	var cur_state: Variant = state.get("currencies", {})
+	if typeof(cur_state) == TYPE_DICTIONARY:
+		player.apply_currency_state(cur_state as Dictionary)
 
 	# Optional: nudge UI/listeners to refresh if they use signals
 	if player.has_signal("player_xp_changed"):
@@ -227,16 +232,23 @@ func apply_stats_progress_state(state: Dictionary) -> bool:
 	if stats_dict.is_empty():
 		return false
 
-	for stat_id in state.keys():
-		if not stats_dict.has(stat_id):
-			# Stat no longer exists / not registered -> ignore
+	# Map stringified keys -> actual key objects used by stats_dict (StringName, int, etc.)
+	var key_lookup: Dictionary = {}
+	for k in stats_dict.keys():
+		key_lookup[String(k)] = k
+
+	for saved_id in state.keys():
+		var saved_key := String(saved_id)
+
+		if not key_lookup.has(saved_key):
 			continue
 
-		var stat = stats_dict[stat_id]
+		var real_key = key_lookup[saved_key]
+		var stat = stats_dict[real_key]
 		if stat == null:
 			continue
 
-		var s: Variant = state[stat_id]
+		var s: Variant = state[saved_id]
 		if typeof(s) != TYPE_DICTIONARY:
 			continue
 
@@ -249,12 +261,10 @@ func apply_stats_progress_state(state: Dictionary) -> bool:
 		stat.level = lv
 		stat.xp = xp
 
-		# Optional: nudge UI/listeners to refresh if they use signals
 		if stat.has_signal("xp_changed"):
-			stat.emit_signal("xp_changed", String(stat_id), stat.xp, stat.level)
+			stat.emit_signal("xp_changed", saved_key, stat.xp, stat.level)
 
 	return true
-
 
 # -------------------------------------------------
 # Combined save / load (filesystem + network + progression)
@@ -262,31 +272,41 @@ func apply_stats_progress_state(state: Dictionary) -> bool:
 
 func build_full_state(term: Terminal) -> Dictionary:
 	var data := build_terminal_state(term)
+	data["version"] = 1
 	data["player_device"] = build_player_device_state()
-
-	# NEW:
 	data["player"] = build_player_progress_state()
 	data["stats"] = build_stats_progress_state()
-
 	return data
 
 func apply_full_state(term: Terminal, state: Dictionary) -> bool:
-	var ok := apply_terminal_state(term, state)
+	if state.is_empty():
+		return false
 
-	var dev_state: Dictionary = state.get("player_device", {})
-	if typeof(dev_state) == TYPE_DICTIONARY:
-		apply_player_device_state(dev_state)
+	# Terminal is important, but don't hard-fail if it can't apply
+	var ok_term := true
+	if state.has("fs") or state.has("cwd"):
+		ok_term = apply_terminal_state(term, state)
 
-	# NEW:
-	var player_state: Dictionary = state.get("player", {})
-	if typeof(player_state) == TYPE_DICTIONARY:
-		apply_player_progress_state(player_state)
+	# Device is optional (depends on init order / singleton availability)
+	var dev_state: Variant = state.get("player_device", {})
+	if typeof(dev_state) == TYPE_DICTIONARY and not (dev_state as Dictionary).is_empty():
+		apply_player_device_state(dev_state as Dictionary)
 
-	var stats_state: Dictionary = state.get("stats", {})
-	if typeof(stats_state) == TYPE_DICTIONARY:
-		apply_stats_progress_state(stats_state)
+	# Player is important
+	var ok_player := true
+	var player_state: Variant = state.get("player", {})
+	if typeof(player_state) == TYPE_DICTIONARY and not (player_state as Dictionary).is_empty():
+		ok_player = apply_player_progress_state(player_state as Dictionary)
 
-	return ok
+	# Stats are important
+	var ok_stats := true
+	var stats_state: Variant = state.get("stats", {})
+	if typeof(stats_state) == TYPE_DICTIONARY and not (stats_state as Dictionary).is_empty():
+		ok_stats = apply_stats_progress_state(stats_state as Dictionary)
+
+	# Success if player OR stats OR terminal applied.
+	# (Terminal might be irrelevant in some screens; player/stats are the real win.)
+	return ok_player or ok_stats or ok_term
 
 
 # -------------------------------------------------
@@ -305,9 +325,9 @@ func load_game(slot: String, term: Terminal) -> bool:
 # -------------------------------------------------
 # PUBLIC API — commands depend on this
 func save_terminal(slot: String, term: Terminal) -> bool:
-	var state := build_terminal_state(term)
-	return save(slot, state)
+	# Backwards-compatible: terminal save now saves FULL state too
+	return save_game(slot, term)
 
 func load_terminal(slot: String, term: Terminal) -> bool:
-	var state := load_slot(slot)
-	return apply_terminal_state(term, state)
+	# Backwards-compatible: terminal load now loads FULL state too
+	return load_game(slot, term)
