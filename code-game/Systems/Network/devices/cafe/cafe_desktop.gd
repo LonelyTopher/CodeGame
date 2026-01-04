@@ -5,9 +5,14 @@ func _init():
 	super._init()  # ✅ creates fs, ip_address, network hooks, etc.
 
 	# --- Identity ---
+	
 	hostname = "cafe-desktop"
 	mac = _generate_mac()
 	online = true
+	hack_chance = 0.65 # 65% chance to hack
+	hack_xp_first = 25
+	hack_xp_repeat = 3
+	was_hacked = false
 
 	# --- Filesystem layout ---
 

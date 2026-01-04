@@ -4,6 +4,14 @@ class_name Device
 # Identity (owned by the device itself)
 var hostname: String = "new-device"
 var mac: String
+var hack_chance: float = 0.35
+# Hack chance is determined by a float between 0.00 and 1.00 #
+
+# Experience system #
+
+var hack_xp_first: int = 25
+var hack_xp_repeat: int = 3
+var was_hacked: bool = false
 
 # Network state (assigned by Network)
 var ip_address: String = ""

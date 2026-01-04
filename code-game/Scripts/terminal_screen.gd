@@ -16,11 +16,19 @@ const SAVE_SLOT := "save1"
 const SLOT_AUTO := "autosave"
 const SLOT_MANUAL := "save1"
 
+# -------------------------------------------------
+# NEW: We keep an internal copy of every printed line
+# so we can replace a specific line later (progress bar).
+# -------------------------------------------------
+var _lines: Array[String] = []
+
+
 func _ready() -> void:
 	var popup := menu_btn.get_popup()
 
 	term = Terminal.new()
 	term.load_commands_from_dir("res://terminal/commands")
+	term.screen = self
 
 	# IMPORTANT:
 	# World.current_device might not be ready yet depending on load order.
@@ -48,6 +56,31 @@ func _ready() -> void:
 
 	popup.id_pressed.connect(_on_menu_item_pressed)
 
+
+# -------------------------------------------------
+# NEW: Public API for commands to animate output
+# -------------------------------------------------
+func append_line(text: String) -> int:
+	_print_line(text)
+	return _lines.size() - 1
+
+func replace_last_line(new_text: String) -> void:
+	if _lines.is_empty():
+		_print_line(new_text)
+		return
+	_lines[_lines.size() - 1] = new_text
+	_rebuild_output_keep_scroll()
+
+func replace_line(index: int, new_text: String) -> void:
+	if index < 0 or index >= _lines.size():
+		return
+	_lines[index] = new_text
+	_rebuild_output_keep_scroll()
+
+
+# -------------------------------------------------
+# INPUT / COMMAND EXECUTION
+# -------------------------------------------------
 func _on_input_submitted(text: String) -> void:
 	var line := text.strip_edges()
 	if line.is_empty():
@@ -58,13 +91,14 @@ func _on_input_submitted(text: String) -> void:
 	_print_line("[color=lime]%s %s[/color]" % [_prompt_text(), line])
 
 	# run the command through your Terminal
-	var results: Array[String] = term.execute(line)
+	# Godot 4: just await execute() (sync commands return immediately)
+	var results: Array[String] = await term.execute(line)
 
 	for r in results:
 		if r == "__CLEAR__":
 			output.clear()
+			_lines.clear()
 			_print_line("Type 'help' for a list of commands")
-			# optional: snap scroll back to top
 			scroll.scroll_vertical = 0
 			continue
 		if line.begins_with("/"):
@@ -79,8 +113,30 @@ func _on_input_submitted(text: String) -> void:
 	# optional: keep the output pinned to bottom after commands
 	call_deferred("_scroll_to_bottom")
 
+
+# -------------------------------------------------
+# OUTPUT HELPERS
+# -------------------------------------------------
 func _print_line(t: String) -> void:
+	_lines.append(t)
 	output.append_text(t + "\n")
+
+func _rebuild_output_keep_scroll() -> void:
+	# Keep it pinned to bottom if user is near bottom,
+	# otherwise don't yank their scroll position.
+	var was_near_bottom := _is_near_bottom()
+
+	output.clear()
+	for l in _lines:
+		output.append_text(l + "\n")
+
+	if was_near_bottom:
+		call_deferred("_scroll_to_bottom")
+
+func _is_near_bottom() -> bool:
+	# Simple heuristic: if you're within ~40px of bottom, treat as pinned.
+	var max_scroll := int(output.get_content_height())
+	return (scroll.scroll_vertical >= (max_scroll - 40))
 
 func _scroll_to_bottom() -> void:
 	scroll.scroll_vertical = int(output.get_content_height())
@@ -96,6 +152,10 @@ func _prompt_text() -> String:
 	# If you want it to show the real path formatting, tweak here.
 	return "C:%s> " % term.cwd
 
+
+# -------------------------------------------------
+# MENU / SAVE LOAD (unchanged)
+# -------------------------------------------------
 func _on_save_pressed() -> void:
 	if term == null:
 		_print_line("[color=red]Save failed:[/color] Terminal not initialized.")

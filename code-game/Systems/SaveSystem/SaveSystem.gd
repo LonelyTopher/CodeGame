@@ -64,6 +64,19 @@ func list_slots() -> Array[String]:
 
 
 # -------------------------------------------------
+# Autoload helper (SaveSystem is RefCounted)
+# -------------------------------------------------
+
+func _autoload(name: String) -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return null
+
+	var root: Node = tree.get_root()
+	return root.get_node_or_null(name)
+
+
+# -------------------------------------------------
 # Terminal filesystem state
 # -------------------------------------------------
 
@@ -140,12 +153,121 @@ func apply_player_device_state(state: Dictionary) -> bool:
 
 
 # -------------------------------------------------
-# Combined save / load (filesystem + network)
+# Player progression state (PlayerBase)
+# -------------------------------------------------
+
+func build_player_progress_state() -> Dictionary:
+	var player = _autoload("PlayerBase")
+	if player == null:
+		return {}
+
+	return {
+		"level": int(player.level),
+		"xp": int(player.xp)
+	}
+
+func apply_player_progress_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+
+	var player = _autoload("PlayerBase")
+	if player == null:
+		return false
+
+	var lv := int(state.get("level", player.level))
+	var xp := int(state.get("xp", player.xp))
+
+	lv = clamp(lv, 1, 50)
+	xp = max(xp, 0)
+
+	player.level = lv
+	player.xp = xp
+
+	# Optional: nudge UI/listeners to refresh if they use signals
+	if player.has_signal("player_xp_changed"):
+		player.emit_signal("player_xp_changed", player.xp, player.level)
+
+	return true
+
+
+# -------------------------------------------------
+# Stats progression state (StatsSystem -> StatBase instances)
+# -------------------------------------------------
+
+func build_stats_progress_state() -> Dictionary:
+	var stats_system = _autoload("StatsSystem")
+	if stats_system == null:
+		return {}
+
+	var out: Dictionary = {}
+	var stats_dict: Dictionary = stats_system.stats
+
+	for stat_id in stats_dict.keys():
+		var stat = stats_dict[stat_id]
+		if stat == null:
+			continue
+
+		out[String(stat_id)] = {
+			"level": int(stat.level),
+			"xp": int(stat.xp)
+		}
+
+	return out
+
+
+func apply_stats_progress_state(state: Dictionary) -> bool:
+	if state.is_empty():
+		return false
+
+	var stats_system = _autoload("StatsSystem")
+	if stats_system == null:
+		return false
+
+	var stats_dict: Dictionary = stats_system.stats
+	if stats_dict.is_empty():
+		return false
+
+	for stat_id in state.keys():
+		if not stats_dict.has(stat_id):
+			# Stat no longer exists / not registered -> ignore
+			continue
+
+		var stat = stats_dict[stat_id]
+		if stat == null:
+			continue
+
+		var s: Variant = state[stat_id]
+		if typeof(s) != TYPE_DICTIONARY:
+			continue
+
+		var lv := int((s as Dictionary).get("level", stat.level))
+		var xp := int((s as Dictionary).get("xp", stat.xp))
+
+		lv = clamp(lv, 1, 50)
+		xp = max(xp, 0)
+
+		stat.level = lv
+		stat.xp = xp
+
+		# Optional: nudge UI/listeners to refresh if they use signals
+		if stat.has_signal("xp_changed"):
+			stat.emit_signal("xp_changed", String(stat_id), stat.xp, stat.level)
+
+	return true
+
+
+# -------------------------------------------------
+# Combined save / load (filesystem + network + progression)
 # -------------------------------------------------
 
 func build_full_state(term: Terminal) -> Dictionary:
 	var data := build_terminal_state(term)
 	data["player_device"] = build_player_device_state()
+
+	# NEW:
+	data["player"] = build_player_progress_state()
+	data["stats"] = build_stats_progress_state()
+
 	return data
 
 func apply_full_state(term: Terminal, state: Dictionary) -> bool:
@@ -154,6 +276,15 @@ func apply_full_state(term: Terminal, state: Dictionary) -> bool:
 	var dev_state: Dictionary = state.get("player_device", {})
 	if typeof(dev_state) == TYPE_DICTIONARY:
 		apply_player_device_state(dev_state)
+
+	# NEW:
+	var player_state: Dictionary = state.get("player", {})
+	if typeof(player_state) == TYPE_DICTIONARY:
+		apply_player_progress_state(player_state)
+
+	var stats_state: Dictionary = state.get("stats", {})
+	if typeof(stats_state) == TYPE_DICTIONARY:
+		apply_stats_progress_state(stats_state)
 
 	return ok
 

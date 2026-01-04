@@ -11,6 +11,7 @@ var cwd: String = "/"
 # Device Stack (for ssh/exit backtracking)
 var device_stack: Array[Device] = []
 var current_device: Device = null
+var screen: Node = null
 
 
 # -------------------------------------------------
@@ -106,7 +107,18 @@ func execute(line: String) -> Array[String]:
 			cwd = "/home"
 
 	var cmd: CommandBase = commands[name]
-	return cmd.run(args, self)
+
+	# -------------------------------------------------
+	# NEW: allow commands to be async (contain `await`)
+	# If run() is normal sync, this returns immediately.
+	# -------------------------------------------------
+	var out = await cmd.run(args, self)
+
+	# Safety: guarantee we always return Array[String]
+	if out is Array:
+		return out
+	return [str(out)]
+
 
 
 func load_commands_from_dir(dir_path: String) -> void:
