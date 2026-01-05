@@ -5,6 +5,7 @@ const XP_PER_PLAYER_LEVEL: int = 100
 
 signal player_xp_changed(new_xp: int, new_level: int)
 signal player_leveled_up(new_level: int)
+signal currency_changed(type: int, new_amount: float)
 
 # --- Currency Enum --- #
 enum Currency {
@@ -58,16 +59,24 @@ func add_currency(type: int, amount: float) -> void:
 		push_error("Currency does not exist: " + currency_name(type))
 		return
 
+	if amount == 0.0:
+		return
+
 	currencies[type] += amount
+	emit_signal("currency_changed", type, float(currencies[type]))
 
 func spend_currency(type: int, amount: float) -> bool:
 	if not currencies.has(type):
+		return false
+
+	if amount <= 0.0:
 		return false
 
 	if currencies[type] < amount:
 		return false
 
 	currencies[type] -= amount
+	emit_signal("currency_changed", type, float(currencies[type]))
 	return true
 
 func get_currency(type: int) -> float:
@@ -82,13 +91,20 @@ func build_currency_state() -> Dictionary:
 func apply_currency_state(state: Dictionary) -> void:
 	for n in state.keys():
 		var amount := float(state[n])
+
 		match String(n):
 			"Dollars":
 				currencies[Currency.DOLLARS] = amount
+				emit_signal("currency_changed", Currency.DOLLARS, amount)
+
 			"Bitcoin":
 				currencies[Currency.BITCOIN] = amount
+				emit_signal("currency_changed", Currency.BITCOIN, amount)
+
 			"Ethereum":
 				currencies[Currency.ETHEREUM] = amount
+				emit_signal("currency_changed", Currency.ETHEREUM, amount)
+
 			_:
 				# Unknown currency in save (future-proofing)
 				pass

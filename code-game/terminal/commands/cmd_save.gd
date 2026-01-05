@@ -13,6 +13,9 @@ func get_usage() -> String:
 func get_examples() -> Array[String]:
 	return ["save", "save save1", "save autosave"]
 
+func get_category() -> String:
+	return "SAVES"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	var slot := "save1"
 	if args.size() >= 1:

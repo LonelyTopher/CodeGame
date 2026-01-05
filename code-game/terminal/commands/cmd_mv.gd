@@ -20,6 +20,9 @@ func get_examples() -> Array[String]:
 		"mv /home/local/file.txt /home/file.txt"
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.size() < 2:
 		return ["mv: missing source or destination"]

@@ -22,6 +22,8 @@ func get_examples() -> Array[String]:
 func get_options() -> Array[Dictionary]:
 	return []
 
+func get_category() -> String:
+	return "NETWORK"
 
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	var d: Device = terminal.current_device

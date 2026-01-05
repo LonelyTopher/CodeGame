@@ -13,6 +13,9 @@ func get_usage() -> String:
 func get_options() -> Array[Dictionary]:
 	return []
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func get_examples() -> Array[String]:
 	return [
 		"cd 			# go to /home",

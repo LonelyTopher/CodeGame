@@ -20,6 +20,9 @@ func get_examples() -> Array[String]:
 		"ls local"
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	var path := terminal.cwd
 	if args.size() >= 1:

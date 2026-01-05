@@ -20,6 +20,9 @@ func get_examples() -> Array[String]:
 		"cp notes.txt local/notes.txt"
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.size() < 2:
 		return ["cp: missing source or destination"]

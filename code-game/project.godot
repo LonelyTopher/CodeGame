@@ -20,6 +20,14 @@ World="*res://Systems/Network/world_network.gd"
 PlayerBase="*res://Systems/Player/player_base.gd"
 StatsSystem="*res://Systems/Stats/stats_system.gd"
 
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/mode=3
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
 [rendering]
 
 renderer/rendering_method="mobile"

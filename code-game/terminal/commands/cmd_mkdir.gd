@@ -20,6 +20,9 @@ func get_examples() -> Array[String]:
 		"mkdir data"
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["mkdir: missing name"]

@@ -17,6 +17,9 @@ func get_examples() -> Array[String]:
 	return [
 		"clear"
 	]
-	
+
+func get_category() -> String:
+	return "CORE"
+
 func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
 	return ["__CLEAR__"]

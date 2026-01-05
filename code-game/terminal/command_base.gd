@@ -23,3 +23,6 @@ func get_options() -> Array[Dictionary]:
 # Returns lines to print #
 func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
 	return ["Command not implemented"]
+
+func get_category() -> String:
+	return "General"

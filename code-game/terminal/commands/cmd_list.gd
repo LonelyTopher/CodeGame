@@ -13,6 +13,9 @@ func get_usage() -> String:
 func get_examples() -> Array[String]:
 	return ["list saves", "list skills"]
 
+func get_category() -> String:
+	return "HELP"
+
 func run(args: Array[String], _terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["list: usage: list saves | list skills"]
@@ -25,14 +28,12 @@ func run(args: Array[String], _terminal: Terminal) -> Array[String]:
 		_:
 			return ["list: unknown category '%s' (try: saves, skills)" % args[0]]
 
-
 func _list_saves() -> Array[String]:
 	var ss := SaveSystem.new()
 	var slots := ss.list_slots()
 	if slots.is_empty():
 		return ["(no saves found)"]
 	return ["Saves: " + ", ".join(slots)]
-
 
 func _list_skills() -> Array[String]:
 	var lines: Array[String] = []
@@ -70,7 +71,6 @@ func _list_skills() -> Array[String]:
 		lines.append("%s  Lv %d  %s  %d/%d XP" % [name, lv, bar, xp, xp_needed])
 
 	return lines
-
 
 func _progress_bar(current: int, max_value: int, width: int = 10) -> String:
 	if max_value <= 0:

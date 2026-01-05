@@ -21,6 +21,9 @@ func get_options() -> Array[Dictionary]:
 		{ "flag": "-r", "long": "--recursive", "desc": "Remove directories and their contents recursively." },
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["rm: missing operand"]

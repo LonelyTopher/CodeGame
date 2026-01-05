@@ -13,6 +13,9 @@ func get_help() -> String:
 func get_usage() -> String:
 	return "ifconfig"
 
+func get_category() -> String:
+	return "NETWORK"
+
 func run(_args: Array[String], terminal: Terminal) -> Array[String]:
 	var d: Device = terminal.current_device
 	if d == null or not d.online:

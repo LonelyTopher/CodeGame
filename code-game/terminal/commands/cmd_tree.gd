@@ -37,6 +37,9 @@ func get_examples() -> Array[String]:
 		"tree --count-only"
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 # -------------------- main --------------------
 
 func run(args: Array[String], terminal: Terminal) -> Array[String]:

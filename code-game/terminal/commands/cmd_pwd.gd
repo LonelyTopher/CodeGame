@@ -18,5 +18,8 @@ func get_examples() -> Array[String]:
 		"pwd"
 	]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
 	return [_terminal.cwd]

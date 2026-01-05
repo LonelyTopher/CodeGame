@@ -15,6 +15,9 @@ func get_examples() -> Array[String]:
 		"exit"
 	]
 
+func get_category() -> String:
+	return "CORE"
+
 func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
 	var stack: Array[Device] = _terminal.device_stack
 

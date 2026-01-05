@@ -1,8 +1,11 @@
-[gd_scene load_steps=4 format=3 uid="uid://clox1ckx4a8x5"]
+[gd_scene load_steps=5 format=3 uid="uid://clox1ckx4a8x5"]
 
 [ext_resource type="Script" uid="uid://ct7iohxrmgjtc" path="res://Scripts/terminal_screen.gd" id="1_hupin"]
 [ext_resource type="FontFile" uid="uid://ckwr31dceq0ri" path="res://Assets/Fonts/RobotoMono-VariableFont_wght.ttf" id="2_x0n36"]
 [ext_resource type="FontFile" uid="uid://bw6jlouyo5kgc" path="res://Assets/Fonts/RobotoMono-Italic-VariableFont_wght.ttf" id="3_y6s3v"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_x0n36"]
+bg_color = Color(0.6, 0.6, 0.6, 0)
 
 [node name="TerminalScreen" type="Control"]
 layout_mode = 3
@@ -11,6 +14,8 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
 script = ExtResource("1_hupin")
 
 [node name="Background" type="ColorRect" parent="."]
@@ -24,10 +29,17 @@ mouse_filter = 2
 color = Color(0, 0, 0, 1)
 
 [node name="VBox" type="VBoxContainer" parent="."]
-layout_mode = 0
-offset_left = 229.0
-offset_right = 1152.0
-offset_bottom = 648.0
+layout_mode = 1
+anchors_preset = 6
+anchor_left = 1.0
+anchor_top = 0.5
+anchor_right = 1.0
+anchor_bottom = 0.5
+offset_left = -1597.0
+offset_top = -540.0
+offset_bottom = 535.0
+grow_horizontal = 0
+grow_vertical = 2
 theme_override_constants/separation = 8
 
 [node name="Scroll" type="ScrollContainer" parent="VBox"]
@@ -45,19 +57,29 @@ size_flags_vertical = 3
 
 [node name="Output" type="RichTextLabel" parent="VBox/Scroll/ScrollContent"]
 layout_mode = 0
-offset_right = 923.0
-offset_bottom = 610.0
+offset_right = 1593.0
+offset_bottom = 1031.0
 size_flags_vertical = 3
-focus_mode = 2
+focus_mode = 0
 mouse_filter = 1
 theme_override_colors/default_color = Color(0, 0.49803922, 0, 1)
 theme_override_constants/line_separation = -1
 theme_override_constants/table_h_separation = 1
 theme_override_constants/table_v_separation = 1
 theme_override_fonts/normal_font = ExtResource("2_x0n36")
+theme_override_fonts/bold_font = ExtResource("2_x0n36")
+theme_override_fonts/bold_italics_font = ExtResource("3_y6s3v")
 theme_override_fonts/italics_font = ExtResource("3_y6s3v")
+theme_override_fonts/mono_font = ExtResource("2_x0n36")
+theme_override_font_sizes/normal_font_size = 20
+theme_override_font_sizes/bold_font_size = 20
+theme_override_font_sizes/bold_italics_font_size = 20
+theme_override_font_sizes/italics_font_size = 20
+theme_override_font_sizes/mono_font_size = 20
 bbcode_enabled = true
 scroll_following = true
+autowrap_mode = 0
+autowrap_trim_flags = 0
 selection_enabled = true
 
 [node name="InputRow" type="HBoxContainer" parent="VBox"]
@@ -65,6 +87,7 @@ layout_mode = 2
 
 [node name="Prompt" type="Label" parent="VBox/InputRow"]
 layout_mode = 2
+theme_override_font_sizes/font_size = 20
 text = ">"
 
 [node name="Input" type="LineEdit" parent="VBox/InputRow"]
@@ -72,15 +95,20 @@ layout_mode = 2
 size_flags_horizontal = 3
 theme_override_constants/caret_width = 8
 theme_override_fonts/font = ExtResource("2_x0n36")
-theme_override_font_sizes/font_size = 16
+theme_override_font_sizes/font_size = 20
 placeholder_text = "   Type a command . . ."
 keep_editing_on_text_submit = true
 caret_blink = true
 
 [node name="SideBar" type="VBoxContainer" parent="."]
-layout_mode = 0
-offset_right = 228.0
-offset_bottom = 648.0
+layout_mode = 1
+anchors_preset = 4
+anchor_top = 0.5
+anchor_bottom = 0.5
+offset_top = -540.5
+offset_right = 325.0
+offset_bottom = 540.5
+grow_vertical = 2
 
 [node name="ScrollContainer" type="ScrollContainer" parent="SideBar"]
 layout_mode = 2
@@ -94,7 +122,73 @@ size_flags_vertical = 3
 
 [node name="MenuBtn" type="MenuButton" parent="SideBar/ScrollContainer/VBoxContainer"]
 layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.6431373, 0.24705882, 1)
 theme_override_fonts/font = ExtResource("2_x0n36")
+theme_override_font_sizes/font_size = 24
 text = "Menu"
+
+[node name="Spacer" type="Control" parent="SideBar/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="WalletBtn" type="Button" parent="SideBar/ScrollContainer/VBoxContainer"]
+layout_mode = 2
+focus_mode = 0
+theme_override_colors/font_color = Color(9.62615e-07, 0.6430791, 0.2460672, 1)
+theme_override_fonts/font = ExtResource("2_x0n36")
+theme_override_font_sizes/font_size = 24
+text = "Wallet"
+flat = true
+
+[node name="WalletPanel" type="PanelContainer" parent="SideBar/ScrollContainer/VBoxContainer"]
+clip_contents = true
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_x0n36")
+
+[node name="MarginContainer" type="MarginContainer" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel"]
+layout_mode = 2
+theme_override_constants/margin_left = 20
+
+[node name="VBoxContainer" type="VBoxContainer" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer"]
+layout_mode = 2
+
+[node name="USD row" type="HBoxContainer" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="USD icon" type="TextureRect" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/USD row"]
+layout_mode = 2
+
+[node name="UsdValue" type="Label" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/USD row"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.6431373, 0.24705882, 1)
+theme_override_fonts/font = ExtResource("2_x0n36")
+theme_override_font_sizes/font_size = 20
+text = "USD: $0.00"
+
+[node name="BTC row" type="HBoxContainer" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="BTC icon" type="TextureRect" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/BTC row"]
+layout_mode = 2
+
+[node name="BTC value" type="Label" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/BTC row"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.6431373, 0.24705882, 1)
+theme_override_fonts/font = ExtResource("2_x0n36")
+theme_override_font_sizes/font_size = 20
+text = "BTC:  0.000000"
+
+[node name="ETH row" type="HBoxContainer" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer"]
+layout_mode = 2
+
+[node name="ETH icon" type="TextureRect" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/ETH row"]
+layout_mode = 2
+
+[node name="ETH value" type="Label" parent="SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/ETH row"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0, 0.6431373, 0.24705882, 1)
+theme_override_fonts/font = ExtResource("2_x0n36")
+theme_override_font_sizes/font_size = 20
+text = "ETH:  0.000000"
 
 [connection signal="pressed" from="SideBar/ScrollContainer/VBoxContainer/MenuBtn" to="." method="_on_menu_pressed"]

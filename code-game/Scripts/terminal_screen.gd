@@ -8,9 +8,17 @@ extends Control
 @onready var input: LineEdit = $VBox/InputRow/Input
 @onready var scroll: ScrollContainer = $VBox/Scroll
 @onready var menu_btn: MenuButton = $SideBar/ScrollContainer/VBoxContainer/MenuBtn
+@onready var wallet_btn: Button = $SideBar/ScrollContainer/VBoxContainer/WalletBtn
+@onready var wallet_panel: PanelContainer = $SideBar/ScrollContainer/VBoxContainer/WalletPanel
+@onready var usd_value: Label = $"SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/USD row/UsdValue"
+@onready var btc_value: Label = $"SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/BTC row/BTC value"
+@onready var eth_value: Label = $"SideBar/ScrollContainer/VBoxContainer/WalletPanel/MarginContainer/VBoxContainer/ETH row/ETH value"
 
 var saves := SaveSystem.new()
 var term: Terminal
+var wallet_open := false
+var wallet_height_open := 120.0 # tweak after you see it
+var _wallet_tween: Tween = null
 
 const SAVE_SLOT := "save1"
 const SLOT_AUTO := "autosave"
@@ -21,7 +29,6 @@ const SLOT_MANUAL := "save1"
 # so we can replace a specific line later (progress bar).
 # -------------------------------------------------
 var _lines: Array[String] = []
-
 
 func _ready() -> void:
 	var popup := menu_btn.get_popup()
@@ -56,10 +63,19 @@ func _ready() -> void:
 
 	popup.id_pressed.connect(_on_menu_item_pressed)
 
+	# ---- Wallet Function for _ready() --- #
+	wallet_btn.pressed.connect(_on_wallet_pressed)
+
+	# start closed
+	wallet_panel.custom_minimum_size.y = 0
+	wallet_panel.modulate.a = 0.0
+	PlayerBase.currency_changed.connect(_on_currency_changed)
+	_refresh_wallet()
 
 # -------------------------------------------------
 # NEW: Public API for commands to animate output
 # -------------------------------------------------
+
 func append_line(text: String) -> int:
 	_print_line(text)
 	return _lines.size() - 1
@@ -81,6 +97,7 @@ func replace_line(index: int, new_text: String) -> void:
 # -------------------------------------------------
 # INPUT / COMMAND EXECUTION
 # -------------------------------------------------
+
 func _on_input_submitted(text: String) -> void:
 	var line := text.strip_edges()
 	if line.is_empty():
@@ -117,14 +134,31 @@ func _on_input_submitted(text: String) -> void:
 # -------------------------------------------------
 # OUTPUT HELPERS
 # -------------------------------------------------
+
 func _print_line(t: String) -> void:
 	_lines.append(t)
-	output.append_text(t + "\n")
+
+	# If the line already has BBCode tags (like [color=lime]), don't wrap it.
+	# Otherwise wrap in [code] so spacing is preserved like a terminal.
+	if t.find("[") != -1 and t.find("]") != -1:
+		output.append_text(t + "\n")
+	else:
+		output.append_text("[code]%s[/code]\n" % t)
+
 
 func _rebuild_output_keep_scroll() -> void:
-	# Keep it pinned to bottom if user is near bottom,
-	# otherwise don't yank their scroll position.
 	var was_near_bottom := _is_near_bottom()
+
+	output.clear()
+	for l in _lines:
+		if l.find("[") != -1 and l.find("]") != -1:
+			output.append_text(l + "\n")
+		else:
+			output.append_text("[code]%s[/code]\n" % l)
+
+	if was_near_bottom:
+		call_deferred("_scroll_to_bottom")
+
 
 	output.clear()
 	for l in _lines:
@@ -224,3 +258,39 @@ func _on_menu_pressed() -> void:
 
 	popup.position = Vector2(popup_x, popup_y)
 	popup.popup()
+
+# -------------------------------------------------
+# Wallet Stuff
+# -------------------------------------------------
+
+func _on_wallet_pressed() -> void:
+	wallet_open = not wallet_open
+
+	# update numbers when opening
+	if wallet_open:
+		_refresh_wallet()
+
+	_animate_wallet(wallet_open)
+
+func _animate_wallet(open: bool) -> void:
+	if _wallet_tween != null and _wallet_tween.is_running():
+		_wallet_tween.kill()
+
+	_wallet_tween = create_tween()
+	_wallet_tween.set_trans(Tween.TRANS_QUAD)
+	_wallet_tween.set_ease(Tween.EASE_OUT)
+
+	var target_h := wallet_height_open if open else 0.0
+	var target_a := 1.0 if open else 0.0
+
+	_wallet_tween.tween_property(wallet_panel, "custom_minimum_size:y", target_h, 0.18)
+	_wallet_tween.parallel().tween_property(wallet_panel, "modulate:a", target_a, 0.12)
+
+func _refresh_wallet() -> void:
+	usd_value.text = "USD: $%.2f" % PlayerBase.get_currency(PlayerBase.Currency.DOLLARS)
+	btc_value.text = "BTC:  %.6f" % PlayerBase.get_currency(PlayerBase.Currency.BITCOIN)
+	eth_value.text = "ETH:  %.6f" % PlayerBase.get_currency(PlayerBase.Currency.ETHEREUM)
+
+func _on_currency_changed(_type: int, _new_amount: float) -> void:
+	if wallet_open:
+		_refresh_wallet()

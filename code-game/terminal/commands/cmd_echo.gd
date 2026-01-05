@@ -20,5 +20,8 @@ func get_examples() -> Array[String]:
 		"echo one two three"
 	]
 
+func get_category() -> String:
+	return "GENERAL"
+
 func run(args: Array[String], _terminal: Terminal) -> Array[String]:
 	return [String(" ").join(args)]

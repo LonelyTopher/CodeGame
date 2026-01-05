@@ -15,6 +15,9 @@ func get_examples() -> Array[String]:
 		"ssh 10.42.7.2"
 	]
 
+func get_category() -> String:
+	return "NETWORK"
+
 # NOTE:
 # Because we use `await` in here, Godot will return a GDScriptFunctionState.
 # Your TerminalScreen already supports that with:

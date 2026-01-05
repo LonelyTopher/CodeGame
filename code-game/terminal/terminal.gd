@@ -1,6 +1,9 @@
 extends RefCounted
 class_name Terminal
 
+# For setting the length of output lines letters #
+var term_width: int = 90
+
 # Command name/alias -> CommandBase
 var commands: Dictionary = {}
 

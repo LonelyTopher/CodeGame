@@ -13,6 +13,9 @@ func get_usage() -> String:
 func get_examples() -> Array[String]:
 	return ["load autosave", "load save1"]
 
+func get_category() -> String:
+	return "SAVES"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["load: missing slot name"]

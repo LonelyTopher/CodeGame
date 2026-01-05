@@ -27,6 +27,9 @@ func get_options() -> Array[Dictionary]:
 		{"flag":"-r", "long":"--reset", "desc":"Reset hostname back to the device default (if available)."},
 	]
 
+func get_category() -> String:
+	return "NETWORK"
+
 func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
 	var device: Device = World.current_device
 	if device == null:
@@ -90,7 +93,6 @@ func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
 
 	device.hostname = set_name
 	return ["hostname set to %s" % device.hostname]
-
 
 func _validate_hostname(name: String) -> String:
 	var n := name.strip_edges()
