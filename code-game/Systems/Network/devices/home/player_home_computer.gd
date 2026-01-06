@@ -2,14 +2,26 @@ extends Device
 class_name PlayerHomeComputer
 
 func _init() -> void:
-	super() # <-- IMPORTANT: runs Device._init() so fs is created
+	super._init() # ensures Device._init() runs, so fs exists + "/home" exists (per our updated Device.gd)
 
 	hostname = "New-Laptop"
+	
+	# ARP IDENDTITY #
+	
+	hwtype = "wifi"
+	iface = "wlan0"
+	netmask = "255.255.255.0"
+	arp_state = "REACHABLE"
+	arp_flags = "C"
 
-	# OPTIONAL: add a more "laptop-ish" filesystem layout
-	fs.mkdir("/home/user")
-	fs.mkdir("/home/user/Documents")
-	fs.mkdir("/home/user/Downloads")
 
-	# Example starter files (only if your FileSystem supports write_file)
-	fs.write_file("/home/user/readme.txt", "welcome home\n")
+# --- FILESYSTEM --- #
+# --- DIRSFIRST --- #
+
+	fs.mkdir("/system")
+	fs.mkdir("/home/downloads")
+	fs.mkdir("/home/local")
+
+# --- FILES --- #
+
+	fs.write_file("/home/readme.txt", "welcome home\n")

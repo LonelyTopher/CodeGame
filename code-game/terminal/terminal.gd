@@ -33,6 +33,7 @@ func set_active_device(device: Device, reset_stack: bool = false) -> void:
 	# Keep filesystem pointer synced to the active device
 	if device != null:
 		fs = device.fs
+
 		# If device has no filesystem (shouldn't happen if Device.super() runs),
 		# create one as a safety net so commands don't crash.
 		if fs == null:
@@ -41,8 +42,10 @@ func set_active_device(device: Device, reset_stack: bool = false) -> void:
 			device.fs = fs
 
 		# Ensure cwd is sane for this device
-		if cwd == "" or cwd == "/" or not fs.is_dir(cwd):
-			cwd = "/home"
+		# NOTE: don't call fs.is_dir if fs is null (we guarded above)
+		if cwd == "" or cwd == "/" or (fs != null and not fs.is_dir(cwd)):
+			# Prefer /home if it exists, else /
+			cwd = "/home" if (fs != null and fs.is_dir("/home")) else "/"
 	else:
 		# No device means no fs
 		fs = null
@@ -72,6 +75,40 @@ func pop_device() -> Device:
 
 
 # -------------------------------------------------
+# NEW: Safety binder (prevents nil fs crashes in commands)
+# -------------------------------------------------
+func _ensure_device_fs() -> bool:
+	# If we already have an fs, we’re good.
+	if fs != null:
+		return true
+
+	# If terminal doesn't have a device yet, try to bind from World autoload.
+	# (Your project uses World.current_device; World is your WorldNetwork autoload.)
+	if current_device == null and World != null:
+		current_device = World.current_device
+		if current_device != null and device_stack.is_empty():
+			device_stack.append(current_device)
+
+	# If we have a device, bind fs from it.
+	if current_device != null:
+		fs = current_device.fs
+
+		# Safety net: create fs if missing
+		if fs == null:
+			fs = FileSystem.new()
+			fs.mkdir("/home")
+			current_device.fs = fs
+
+		# Keep cwd valid
+		if cwd == "" or cwd == "/" or (fs != null and not fs.is_dir(cwd)):
+			cwd = "/home" if (fs != null and fs.is_dir("/home")) else "/"
+
+		return true
+
+	return false
+
+
+# -------------------------------------------------
 # Command Registration / Execution
 # -------------------------------------------------
 func register_command(cmd: CommandBase) -> void:
@@ -81,6 +118,11 @@ func register_command(cmd: CommandBase) -> void:
 
 
 func execute(line: String) -> Array[String]:
+	# Make sure we are bound to a device filesystem before running any command.
+	# This prevents ls/tree crash on terminal.fs.is_dir(...)
+	if not _ensure_device_fs():
+		return ["Terminal error: No active device/filesystem. (World.current_device is null)"]
+
 	var text := line.strip_edges()
 	if text.is_empty():
 		return []
@@ -107,13 +149,12 @@ func execute(line: String) -> Array[String]:
 			current_device.fs = fs
 
 		if cwd == "" or cwd == "/":
-			cwd = "/home"
+			cwd = "/home" if (fs != null and fs.is_dir("/home")) else "/"
 
 	var cmd: CommandBase = commands[name]
 
 	# -------------------------------------------------
-	# NEW: allow commands to be async (contain `await`)
-	# If run() is normal sync, this returns immediately.
+	# allow commands to be async (contain `await`)
 	# -------------------------------------------------
 	var out = await cmd.run(args, self)
 
@@ -121,7 +162,6 @@ func execute(line: String) -> Array[String]:
 	if out is Array:
 		return out
 	return [str(out)]
-
 
 
 func load_commands_from_dir(dir_path: String) -> void:
@@ -210,6 +250,6 @@ func set_state(data: Dictionary) -> bool:
 
 	# Keep cwd valid
 	if fs != null and not fs.is_dir(cwd):
-		cwd = "/home"
+		cwd = "/home" if fs.is_dir("/home") else "/"
 
 	return true

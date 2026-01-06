@@ -32,7 +32,7 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		if a == "-a" or a == "--all":
 			show_all = true
 
-	# We are hard-setting the ARP table width to 150 chars.
+	# We are hard-setting the ARP table width
 	var total_w: int = MAX_TABLE_W
 
 	# ---- async "probing" animation (pure presentation) ----
@@ -72,33 +72,61 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	# Rows
 	var net: Network = device.network
 	for d in net.devices:
-		if d.ip_address == "":
+		if d == null:
 			continue
 
-		# If you later add these fields to Device, they’ll show automatically:
-		var hwtype := "ether"
-		var mac := d.mac.to_lower() if d.mac != "" else "--"
+		# IP (required for ARP row)
+		if d.ip_address == null or str(d.ip_address) == "":
+			continue
+		var ip := str(d.ip_address)
 
+		# MAC
+		var mac := "--"
+		if d.mac != null and str(d.mac) != "":
+			mac = str(d.mac).to_lower()
+
+		# HWtype (your new field on Device)
+		# If missing/blank, show "ether" for realism (or "--" if you prefer)
+		var hwtype := "ether"
+		if "hwtype" in d and str(d.hwtype) != "":
+			hwtype = str(d.hwtype).to_lower()
+		elif "hw_type" in d and str(d.hw_type) != "":
+			hwtype = str(d.hw_type).to_lower()
+		elif "hardware_type" in d and str(d.hardware_type) != "":
+			hwtype = str(d.hardware_type).to_lower()
+
+		# State (placeholder unless you add a field)
 		var state := "--"
 		if "neighbor_state" in d and str(d.neighbor_state) != "":
 			state = str(d.neighbor_state)
+		elif "arp_state" in d and str(d.arp_state) != "":
+			state = str(d.arp_state)
 
+		# Flags
 		var flags := "C" if mac != "--" else "--"
 		if "arp_flags" in d and str(d.arp_flags) != "":
 			flags = str(d.arp_flags)
 
+		# Mask
 		var mask := "--"
 		if "netmask" in d and str(d.netmask) != "":
 			mask = str(d.netmask)
 
+		# Iface
 		var iface := "eth0"
 		if "iface" in d and str(d.iface) != "":
 			iface = str(d.iface)
-		elif "iface" in device and str(device.iface) != "":
+		elif device != null and "iface" in device and str(device.iface) != "":
 			iface = str(device.iface)
 
+		# Optional: if you ever want -a to include offline/unseen, you can gate it here.
+		# Right now we just keep your behavior unchanged.
+		if not show_all:
+			# no extra filtering currently
+			pass
+
 		lines.append(_compose_line(total_w, {
-			addr_pos:  d.ip_address,
+			addr_pos:  ip,
 			type_pos:  hwtype,
 			hw_pos:    mac,
 			state_pos: state,

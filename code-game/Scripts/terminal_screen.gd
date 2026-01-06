@@ -25,7 +25,7 @@ const SLOT_AUTO := "autosave"
 const SLOT_MANUAL := "save1"
 
 # -------------------------------------------------
-# NEW: We keep an internal copy of every printed line
+# We keep an internal copy of every printed line
 # so we can replace a specific line later (progress bar).
 # -------------------------------------------------
 var _lines: Array[String] = []
@@ -39,11 +39,16 @@ func _ready() -> void:
 
 	# IMPORTANT:
 	# World.current_device might not be ready yet depending on load order.
-	# So we defer one frame to be safe.
-	await get_tree().process_frame
+	# So we wait until the device + fs exist (prevents nil fs crashes in ls/tree).
+	await _wait_for_world_device()
 
 	# Use the real device + its filesystem (DO NOT create a new FileSystem here)
 	term.set_active_device(World.current_device, true)
+
+	# OPTIONAL: keep terminal synced if device changes later (ssh/connect)
+	if World != null and World.has_signal("current_device_changed"):
+		if not World.current_device_changed.is_connected(_on_current_device_changed):
+			World.current_device_changed.connect(_on_current_device_changed)
 
 	_update_prompt()
 
@@ -60,7 +65,6 @@ func _ready() -> void:
 	popup.add_item("Save Game", 0)
 	popup.add_item("Load Save", 1)
 	popup.add_item("Delete Save", 2)
-
 	popup.id_pressed.connect(_on_menu_item_pressed)
 
 	# ---- Wallet Function for _ready() --- #
@@ -72,10 +76,28 @@ func _ready() -> void:
 	PlayerBase.currency_changed.connect(_on_currency_changed)
 	_refresh_wallet()
 
-# -------------------------------------------------
-# NEW: Public API for commands to animate output
-# -------------------------------------------------
 
+# -------------------------------------------------
+# Device readiness + syncing
+# -------------------------------------------------
+func _wait_for_world_device() -> void:
+	for i in range(240):
+		if World != null and World.current_device != null and World.current_device.fs != null:
+			return
+		await get_tree().process_frame
+
+	_print_line("[color=red]Fatal:[/color] World.current_device not ready. Check WorldNetwork autoload and LAN scripts.")
+
+func _on_current_device_changed(dev: Device) -> void:
+	if dev == null:
+		return
+	term.set_active_device(dev, false)
+	_update_prompt()
+
+
+# -------------------------------------------------
+# Public API for commands to animate output
+# -------------------------------------------------
 func append_line(text: String) -> int:
 	_print_line(text)
 	return _lines.size() - 1
@@ -97,7 +119,6 @@ func replace_line(index: int, new_text: String) -> void:
 # -------------------------------------------------
 # INPUT / COMMAND EXECUTION
 # -------------------------------------------------
-
 func _on_input_submitted(text: String) -> void:
 	var line := text.strip_edges()
 	if line.is_empty():
@@ -107,8 +128,7 @@ func _on_input_submitted(text: String) -> void:
 	# echo the command line with prompt
 	_print_line("[color=lime]%s %s[/color]" % [_prompt_text(), line])
 
-	# run the command through your Terminal
-	# Godot 4: just await execute() (sync commands return immediately)
+	# run the command
 	var results: Array[String] = await term.execute(line)
 
 	for r in results:
@@ -118,16 +138,12 @@ func _on_input_submitted(text: String) -> void:
 			_print_line("Type 'help' for a list of commands")
 			scroll.scroll_vertical = 0
 			continue
-		if line.begins_with("/"):
-			line = line.trim_prefix("/")
 
 		_print_line(r)
 
 	input.clear()
 	_update_prompt()
 	call_deferred("_refocus_input")
-
-	# optional: keep the output pinned to bottom after commands
 	call_deferred("_scroll_to_bottom")
 
 
@@ -135,15 +151,32 @@ func _on_input_submitted(text: String) -> void:
 # OUTPUT HELPERS
 # -------------------------------------------------
 
+# Detects [color=...]...[/color] and injects [code] inside it so we keep monospace alignment.
+func _format_for_output(line: String) -> String:
+	# Always preserve spacing like a terminal.
+	# If we see a color wrapper, keep color but force monospace inside.
+	if line.begins_with("[color=") and line.find("]") != -1 and line.ends_with("[/color]"):
+		var open_end := line.find("]") + 1
+		var close_start := line.rfind("[/color]")
+		if close_start > open_end:
+			var head := line.substr(0, open_end)
+			var body := line.substr(open_end, close_start - open_end)
+			var tail := line.substr(close_start) # [/color]
+			return "%s[code]%s[/code]%s" % [head, body, tail]
+
+	# If it has any other BBCode, you still usually want it monospace.
+	# Wrapping the whole thing in [code] is safest for alignment.
+	# (Yes, if you ever print other BBCode tags, they will appear literally. That’s fine for now.)
+	if line.find("[") != -1 and line.find("]") != -1:
+		return "[code]%s[/code]" % line
+
+	# Normal line: monospace
+	return "[code]%s[/code]" % line
+
+
 func _print_line(t: String) -> void:
 	_lines.append(t)
-
-	# If the line already has BBCode tags (like [color=lime]), don't wrap it.
-	# Otherwise wrap in [code] so spacing is preserved like a terminal.
-	if t.find("[") != -1 and t.find("]") != -1:
-		output.append_text(t + "\n")
-	else:
-		output.append_text("[code]%s[/code]\n" % t)
+	output.append_text(_format_for_output(t) + "\n")
 
 
 func _rebuild_output_keep_scroll() -> void:
@@ -151,29 +184,24 @@ func _rebuild_output_keep_scroll() -> void:
 
 	output.clear()
 	for l in _lines:
-		if l.find("[") != -1 and l.find("]") != -1:
-			output.append_text(l + "\n")
-		else:
-			output.append_text("[code]%s[/code]\n" % l)
+		output.append_text(_format_for_output(l) + "\n")
 
 	if was_near_bottom:
 		call_deferred("_scroll_to_bottom")
 
-
-	output.clear()
-	for l in _lines:
-		output.append_text(l + "\n")
-
-	if was_near_bottom:
-		call_deferred("_scroll_to_bottom")
 
 func _is_near_bottom() -> bool:
-	# Simple heuristic: if you're within ~40px of bottom, treat as pinned.
-	var max_scroll := int(output.get_content_height())
-	return (scroll.scroll_vertical >= (max_scroll - 40))
+	# Use the ScrollBar max; content height can be misleading.
+	var sb := scroll.get_v_scroll_bar()
+	if sb == null:
+		return true
+	return scroll.scroll_vertical >= int(sb.max_value - 40.0)
 
 func _scroll_to_bottom() -> void:
-	scroll.scroll_vertical = int(output.get_content_height())
+	var sb := scroll.get_v_scroll_bar()
+	if sb == null:
+		return
+	scroll.scroll_vertical = int(sb.max_value)
 
 func _refocus_input() -> void:
 	input.grab_focus()
@@ -182,8 +210,6 @@ func _update_prompt() -> void:
 	prompt.text = _prompt_text()
 
 func _prompt_text() -> String:
-	# Matches the look you have: C://home>
-	# If you want it to show the real path formatting, tweak here.
 	return "C:%s> " % term.cwd
 
 
@@ -196,7 +222,6 @@ func _on_save_pressed() -> void:
 		return
 
 	var success := saves.save_game(SLOT_MANUAL, term)
-
 	if success:
 		_print_line("[color=lime]Game saved successfully.[/color]")
 	else:
@@ -207,7 +232,6 @@ func _on_load_pressed() -> void:
 		_print_line("[color=red]Load failed:[/color] Terminal not initialized.")
 		return
 
-	# Prefer manual save if it exists, otherwise fall back to autosave
 	var slot := SLOT_MANUAL if saves.exists(SLOT_MANUAL) else SLOT_AUTO
 	if not saves.exists(slot):
 		_print_line("[color=red]Load failed:[/color] Save not found.")
@@ -223,7 +247,6 @@ func _on_load_pressed() -> void:
 	call_deferred("_refocus_input")
 
 func _on_delete_pressed() -> void:
-	# Only delete the manual save slot, never delete autosave
 	if not saves.exists(SLOT_MANUAL):
 		_print_line("No manual save to delete.")
 		return
@@ -245,10 +268,8 @@ func _on_menu_item_pressed(id: int) -> void:
 
 func _on_menu_pressed() -> void:
 	var popup := menu_btn.get_popup()
-
-	# Make sure popup has its final size
 	popup.reset_size()
-	await get_tree().process_frame  # ensures size/rect updates
+	await get_tree().process_frame
 
 	var btn_rect := menu_btn.get_global_rect()
 	var popup_size := popup.size
@@ -262,14 +283,10 @@ func _on_menu_pressed() -> void:
 # -------------------------------------------------
 # Wallet Stuff
 # -------------------------------------------------
-
 func _on_wallet_pressed() -> void:
 	wallet_open = not wallet_open
-
-	# update numbers when opening
 	if wallet_open:
 		_refresh_wallet()
-
 	_animate_wallet(wallet_open)
 
 func _animate_wallet(open: bool) -> void:

@@ -106,22 +106,38 @@ func read_file(path: String) -> String:
 
 # ---------- Mutations ----------
 func mkdir(path: String) -> bool:
-	if path == "/" or path.strip_edges() == "":
+	path = path.strip_edges()
+	if path == "" or path == "/":
 		return true
 
+	# Always require absolute paths
+	if not path.begins_with("/"):
+		return false
+
 	var parent := _get_parent_dir(path)
-	if parent.is_empty() and path != "/":
+
+	# IMPORTANT:
+	# If parent lookup failed, root is the fallback for top-level dirs like "/etc"
+	if parent.is_empty():
 		parent = root
+
+
+	# Parent must be a directory node with children
+	if not parent.has("children") or typeof(parent["children"]) != TYPE_DICTIONARY:
+		return false
 
 	var name := _base_name(path)
 	if name == "":
 		return false
 
 	var children: Dictionary = parent["children"]
-	if children.has(name):
-		return children[name].get("type","") == "dir"
 
-	children[name] = {"type":"dir", "children": {}}
+	# If it already exists, mkdir succeeds only if it's a dir
+	if children.has(name):
+		return children[name].get("type", "") == "dir"
+
+	# Create
+	children[name] = {"type": "dir", "children": {}}
 	return true
 
 func touch(path: String) -> bool:

@@ -1,6 +1,19 @@
 extends CommandBase
 class_name CmdTree
 
+# Root-level "system" directories we hide unless -a/--all is used.
+const SYSTEM_ROOT_DIRS := {
+	"etc": true,
+	"var": true,
+	"bin": true,
+	"usr": true,
+	"tmp": true,
+	"dev": true,
+	"proc": true,
+	"sys": true,
+	"root": true
+}
+
 func get_name() -> String:
 	return "tree"
 
@@ -8,10 +21,11 @@ func get_help() -> String:
 	return "Display the directory structure as a tree."
 
 func get_usage() -> String:
-	return "tree [path] [-d|--files-only] [-L <depth>] [-f] [--dirsfirst] [--nocolor] [-P <pattern>] [--count-only] [--ascii] [-s]"
+	return "tree [path] [-a|--all] [-d|--files-only] [-L <depth>] [-f] [--dirsfirst] [--nocolor] [-P <pattern>] [--count-only] [--ascii] [-s]"
 
 func get_options() -> Array[Dictionary]:
 	return [
+		{"flag":"-a", "long":"--all", "desc":"Show all entries (including dotfiles and system root dirs)."},
 		{"flag":"-d", "long":"", "desc":"List directories only."},
 		{"flag":"", "long":"--files-only", "desc":"List files only."},
 		{"flag":"-L", "long":"", "desc":"Limit the display depth. Example: -L 2"},
@@ -28,6 +42,8 @@ func get_examples() -> Array[String]:
 	return [
 		"tree",
 		"tree /home",
+		"tree /",
+		"tree -a /",
 		"tree -d",
 		"tree --files-only",
 		"tree -L 2",
@@ -43,6 +59,7 @@ func get_category() -> String:
 # -------------------- main --------------------
 
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
+	var show_all := false
 	var dirs_only := false
 	var files_only := false
 	var max_depth := -1 # -1 = unlimited
@@ -65,6 +82,8 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		var a := args[i]
 
 		match a:
+			"-a", "--all":
+				show_all = true
 			"-d":
 				dirs_only = true
 			"--files-only":
@@ -148,6 +167,7 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		"",
 		1,
 		max_depth,
+		show_all,
 		dirs_only,
 		files_only,
 		full_paths,
@@ -223,6 +243,20 @@ func _child_path(dir_path: String, name: String) -> String:
 		p = "/" + name
 	return p
 
+func _is_hidden_or_system(dir_path: String, name: String, show_all: bool) -> bool:
+	if show_all:
+		return false
+
+	# Hide dotfiles unless -a
+	if name.begins_with("."):
+		return true
+
+	# Hide system root dirs unless -a (only when listing the root "/")
+	if dir_path == "/" and SYSTEM_ROOT_DIRS.has(name):
+		return true
+
+	return false
+
 func _build_tree(
 	lines: Array[String],
 	terminal: Terminal,
@@ -230,6 +264,7 @@ func _build_tree(
 	prefix: String,
 	depth: int,
 	max_depth: int,
+	show_all: bool,
 	dirs_only: bool,
 	files_only: bool,
 	full_paths: bool,
@@ -251,12 +286,22 @@ func _build_tree(
 		var dirs: Array[String] = []
 		var files: Array[String] = []
 		for n in names:
+			if _is_hidden_or_system(dir_path, n, show_all):
+				continue
 			var cp := _child_path(dir_path, n)
 			if terminal.fs.is_dir(cp):
 				dirs.append(n)
 			else:
 				files.append(n)
 		names = dirs + files
+	else:
+		# still need to filter hidden/system before later logic
+		var filtered: Array[String] = []
+		for n in names:
+			if _is_hidden_or_system(dir_path, n, show_all):
+				continue
+			filtered.append(n)
+		names = filtered
 
 	# filter by pattern AND mode, but keep a "final list" so is_last works right
 	var final: Array[String] = []
@@ -274,9 +319,6 @@ func _build_tree(
 			continue
 
 		final.append(n)
-
-	# If files_only, we don't print directories, but we DO traverse them.
-	# So for the printed list, final only contains files. Traversal below handles dirs separately.
 
 	# When NOT files_only, we print from final list (dirs + files or dirs only)
 	for idx in range(final.size()):
@@ -315,7 +357,7 @@ func _build_tree(
 				next_prefix = prefix + ("    " if is_last else "|   ")
 			else:
 				next_prefix = prefix + ("   " if is_last else "│  ")
-			_build_tree(lines, terminal, cp, next_prefix, depth + 1, max_depth, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
+			_build_tree(lines, terminal, cp, next_prefix, depth + 1, max_depth, show_all, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
 
 	# Special handling for files_only: traverse directories even though we didn't print them.
 	if files_only:
@@ -326,15 +368,24 @@ func _build_tree(
 			var ds: Array[String] = []
 			var fs: Array[String] = []
 			for n in dir_names:
+				if _is_hidden_or_system(dir_path, n, show_all):
+					continue
 				var cp := _child_path(dir_path, n)
 				if terminal.fs.is_dir(cp):
 					ds.append(n)
 				else:
 					fs.append(n)
 			dir_names = ds + fs
+		else:
+			var filtered_dirs: Array[String] = []
+			for n in dir_names:
+				if _is_hidden_or_system(dir_path, n, show_all):
+					continue
+				filtered_dirs.append(n)
+			dir_names = filtered_dirs
 
 		for n in dir_names:
 			var cp2 := _child_path(dir_path, n)
 			if terminal.fs.is_dir(cp2):
 				# traverse regardless of pattern; pattern applies to printed entries
-				_build_tree(lines, terminal, cp2, prefix, depth + 1, max_depth, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
+				_build_tree(lines, terminal, cp2, prefix, depth + 1, max_depth, show_all, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
