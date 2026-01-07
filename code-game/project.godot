@@ -19,6 +19,7 @@ config/features=PackedStringArray("4.5", "Mobile")
 World="*res://Systems/Network/world_network.gd"
 PlayerBase="*res://Systems/Player/player_base.gd"
 StatsSystem="*res://Systems/Stats/stats_system.gd"
+NetHeartbeat="*res://Systems/Network/network_heartbeat.gd"
 
 [display]
 

@@ -15,7 +15,7 @@ var neighbor_state_override: int = -1 # -1 = no override; otherwise NeighborStat
 var arp_last_seen_ms: int = -1        # When we last confirmed the mapping
 var arp_ever_seen: bool = false       # did we ever resolve this device?
 var is_router: bool = false           # mark routers
-var arp_state: String = ""
+var arp_state: String = "INCOMPLETE"
 var iface: String = ""
 var netmask: String = ""
 var arp_flags: String = ""

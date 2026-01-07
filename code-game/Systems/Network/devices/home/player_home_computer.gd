@@ -12,7 +12,7 @@ func _init() -> void:
 	iface = "wlan0"
 	netmask = "255.255.255.0"
 	arp_state = "REACHABLE"
-	arp_flags = "C"
+	arp_flags = "L"
 
 
 # --- FILESYSTEM --- #

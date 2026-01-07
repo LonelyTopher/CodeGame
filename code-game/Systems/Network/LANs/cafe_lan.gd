@@ -19,11 +19,36 @@ func build(world: WorldNetwork) -> void:
 	cafe.visibility = "public"
 	cafe.scan_signal_placeholder = "--"
 	cafe.neighbor_id = 1
+	cafe.gateway_host = 1
 	world.register_network(cafe, "cafe")
 
 
 
 
+
+
+	# =================================================
+	# ROUTER / GATEWAY (forced .1)
+	# =================================================
+
+	var cafe_gateway: Device = Device.new()
+	cafe_gateway.hostname = "netgear-ap"
+	cafe_gateway.hack_chance = 0.10
+
+	# Make the router MAC match the BSSID you already assigned to the network (nice realism)
+	# (Only do this if your Device.mac is writable and not auto-generated/locked.)
+	cafe_gateway.mac = cafe.bssid
+
+	# ARP identity fields
+	cafe_gateway.hwtype = "ether"
+	cafe_gateway.iface = "eth0"
+	cafe_gateway.arp_flags = "R"
+	cafe_gateway.arp_state = "PERMANENT"
+	cafe_gateway.netmask = "255.255.255.0"
+	cafe_gateway.online = true
+
+	# IMPORTANT: This is what forces .1 (DO NOT use attach_to_network for the router)
+	cafe.attach_router(cafe_gateway)
 
 
 
@@ -34,6 +59,8 @@ func build(world: WorldNetwork) -> void:
 	cafe_desktop.hostname = "cafe-desktop"
 	cafe_desktop.hack_chance = 0.20
 	cafe_desktop.hwtype = "ether"
+	cafe_desktop.iface = "eth0"
+
 
 	# User dirs
 	cafe_desktop.fs.mkdir("/home")
@@ -120,6 +147,7 @@ func build(world: WorldNetwork) -> void:
 	cafe_server.hostname = "cafe-BOS"
 	cafe_server.hack_chance = 0.10
 	cafe_server.hwtype = "ether"
+	cafe_server.iface = "eth0"
 	
 	cafe_server.fs.mkdir("/home")
 	cafe_server.fs.mkdir("/home/server")
@@ -244,6 +272,7 @@ func build(world: WorldNetwork) -> void:
 	pos1.hostname = "pos-terminal-1"
 	pos1.hack_chance = 0.55
 	pos1.hwtype = "ether"
+	pos1.iface = "eth0"
 
 	pos1.fs.mkdir("/home")
 	pos1.fs.mkdir("/home/pos")
@@ -286,6 +315,7 @@ func build(world: WorldNetwork) -> void:
 	pos2.hostname = "pos-terminal-2"
 	pos2.hack_chance = 0.60
 	pos2.hwtype = "ether"
+	pos2.iface = "eth0"
 
 	pos2.fs.mkdir("/home")
 	pos2.fs.mkdir("/home/pos")
@@ -333,6 +363,7 @@ func build(world: WorldNetwork) -> void:
 	study_laptop.hostname = "study-laptop"
 	study_laptop.hack_chance = 0.35
 	study_laptop.hwtype = "wifi"
+	study_laptop.iface = "wlan0"
 
 	study_laptop.fs.mkdir("/home")
 	study_laptop.fs.mkdir("/home/alex")
@@ -372,6 +403,7 @@ func build(world: WorldNetwork) -> void:
 	work_laptop.hostname = "work-laptop"
 	work_laptop.hack_chance = 0.30
 	work_laptop.hwtype = "wifi"
+	work_laptop.iface = "wlp2so"
 	
 	
 	work_laptop.fs.mkdir("/home")
@@ -412,6 +444,7 @@ func build(world: WorldNetwork) -> void:
 	jacks_laptop.hack_chance = 0.01
 	jacks_laptop.mac = jacks_laptop.get_mac()
 	jacks_laptop.hwtype = "bt"
+	jacks_laptop.iface = "wlan0"
 	
 	
 	jacks_laptop.fs.mkdir("/home/stash")
@@ -431,6 +464,7 @@ func build(world: WorldNetwork) -> void:
 	phone_jules.hostname = "phone-jules"
 	phone_jules.hack_chance = 0.80
 	phone_jules.hwtype = "cell"
+	phone_jules.iface = "wwan0"
 
 	phone_jules.fs.mkdir("/home")
 	phone_jules.fs.mkdir("/home/jules")
@@ -474,6 +508,7 @@ func build(world: WorldNetwork) -> void:
 	phone_sam.hostname = "phone-sam"
 	phone_sam.hack_chance = 0.75
 	phone_sam.hwtype = "cell"
+	phone_sam.iface = "wwan0"
 
 	phone_sam.fs.mkdir("/home")
 	phone_sam.fs.mkdir("/home/sam")
@@ -508,6 +543,7 @@ func build(world: WorldNetwork) -> void:
 	phone_kai.hostname = "phone-kai"
 	phone_kai.hack_chance = 0.85
 	phone_kai.hwtype = "cell"
+	phone_kai.iface = "cell0"
 
 	phone_kai.fs.mkdir("/home")
 	phone_kai.fs.mkdir("/home/kai")
@@ -540,6 +576,7 @@ func build(world: WorldNetwork) -> void:
 	phone_nina.hostname = "phone-nina"
 	phone_nina.hack_chance = 0.70
 	phone_nina.hwtype = "cell"
+	phone_nina.iface = "wwan0"
 
 	phone_nina.fs.mkdir("/system")
 	phone_nina.fs.mkdir("/system/nina")
@@ -568,6 +605,8 @@ func build(world: WorldNetwork) -> void:
 	phone_lee.hostname = "phone-lee"
 	phone_lee.hack_chance = 0.78
 	phone_lee.hwtype = "cell"
+	phone_lee.iface = "cell0"
+	
 
 	phone_lee.fs.mkdir("/system")
 	phone_lee.fs.mkdir("/system/lee")
@@ -599,6 +638,7 @@ func build(world: WorldNetwork) -> void:
 	phone_taylor.hostname = "phone-taylor"
 	phone_taylor.hack_chance = 0.82
 	phone_taylor.hwtype = "cell"
+	phone_taylor.iface = "cell0"
 
 	phone_taylor.fs.mkdir("/system")
 	phone_taylor.fs.mkdir("/system/taylor")
@@ -629,6 +669,7 @@ func build(world: WorldNetwork) -> void:
 	phone_riley.hostname = "phone-riley"
 	phone_riley.hack_chance = 0.74
 	phone_riley.hwtype = "cell"
+	phone_riley.iface = "cell0"
 
 	phone_riley.fs.mkdir("/home")
 	phone_riley.fs.mkdir("/home/riley")

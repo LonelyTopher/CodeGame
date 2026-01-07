@@ -37,7 +37,7 @@ func build(world: WorldNetwork) -> void:
 	# Use whatever exact field names you added to Device.gd
 	router.hwtype = "ether"          # wired device
 	router.iface = "eth0"            # interface name shown in arp
-	router.arp_flags = "C"           # C = "complete" (your arp cmd already uses this)
+	router.arp_flags = "R"           # C = "complete" (your arp cmd already uses this)
 	router.arp_state = "PERMANENT"   # typical for gateway/static entry
 	router.netmask = "255.255.255.0" # optional; or leave "--"
 	router.online = true             # if you have it
