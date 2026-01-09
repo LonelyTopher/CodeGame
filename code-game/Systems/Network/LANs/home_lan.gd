@@ -28,6 +28,9 @@ func build(world: WorldNetwork) -> void:
 	router.hack_chance = 100.0
 	router.hack_xp_first = 0
 	router.hack_xp_repeat = 0
+	
+	# --- NETWORK PASSWORD FOR HACK'ING MINIGAME --- #
+	router.network_password = "Net10"
 
 	# IMPORTANT: ensure router has a MAC before attach_router uses it as the key
 	if router.mac == "" or router.mac == null:

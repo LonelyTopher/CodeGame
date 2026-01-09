@@ -17,6 +17,9 @@ var channel: int = 6
 var bssid: String = ""
 var difficulty: int = 1
 
+# --- NETWORK PASSWORD FOR MINIGAME --- #
+var network_password: String = ""
+
 # HIDDEN FIELD FOR NEIGHBORING NETWORKS AND SCAN NETWORK DISCOVERY #
 var neighbor_id: int = 0
 

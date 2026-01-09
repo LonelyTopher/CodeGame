@@ -21,11 +21,6 @@ func get_examples() -> Array[String]:
 func get_category() -> String:
 	return "NETWORK"
 
-# NOTE:
-# Because we use `await` in here, Godot will return a GDScriptFunctionState.
-# Your TerminalScreen already supports that with:
-#   var res = term.execute(...)
-#   if res is GDScriptFunctionState: res = await res
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["ssh: missing ip address"]
@@ -73,7 +68,6 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	# If cooldown expired, restore device online + clear lockout
 	if offline_until_ms > 0 and now_ms >= offline_until_ms:
 		target.set_meta("offline_until_ms", 0)
-		# restore online only if property exists
 		if "online" in target:
 			target.online = true
 
@@ -98,16 +92,18 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 			""
 		]
 
-	# We'll build "final output" lines here.
-	# The bar itself is animated via screen.replace_line().
-	var lines: Array[String] = []
-	lines.append("Connecting to %s..." % ip)
+	# -------------------------------------------------
+	# Get StatsSystem autoload (NO get_tree)
+	# -------------------------------------------------
+	var root := tree.get_root()
+	var stats = root.get_node_or_null("StatsSystem")
+	if stats == null:
+		return ["ssh: internal error (StatsSystem missing)"]
 
-	# Print the "Connecting..." line immediately
-	# (So the bar appears under it)
-	var _connecting_index: int = screen.append_line("Connecting to %s..." % ip)
-
-	# Create progress bar line ONCE and animate it in-place
+	# -------------------------------------------------
+	# Progress bar (purely cosmetic)
+	# -------------------------------------------------
+	screen.append_line("Connecting to %s..." % ip)
 	var bar_index: int = screen.append_line("[----------]")
 
 	var total := 10
@@ -118,22 +114,28 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		screen.replace_line(bar_index, "[%s%s]" % [filled, empty])
 
 	# -------------------------------------------------
-	# Hack chance roll (device-driven)
+	# Launch PASSWORD CRACKING MINIGAME instead of RNG
+	# The minigame will read target.network_password internally.
 	# -------------------------------------------------
-	var chance: float = 0.35
+	var mg := PswdCrackingMinigame.new()
+
+	# OPTIONAL: if you want tier to still be derived from hack_chance, pass it through
+	var hack_chance: float = 0.35
 	if "hack_chance" in target:
-		chance = float(target.hack_chance)
-	chance = clamp(chance, 0.0, 1.0)
+		hack_chance = float(target.hack_chance)
+	hack_chance = clamp(hack_chance, 0.0, 1.0)
 
-	var success := (randf() <= chance)
+	# This will call screen.set_modal(self, true) inside the minigame setup.
+	# Pass target directly so _get_target_password() pulls target.network_password
+	mg.setup_and_generate(terminal, target, hack_chance, current, LOCKOUT_FAILS)
 
-	# -------------------------------------------------
-	# Get StatsSystem autoload (NO get_tree)
-	# -------------------------------------------------
-	var root := tree.get_root()
-	var stats = root.get_node_or_null("StatsSystem")
-	if stats == null:
-		return ["ssh: internal error (StatsSystem missing)"]
+	# Wait for the minigame to finish
+	var outcome := await _await_minigame_result(mg, tree)
+
+	# If player closed it, treat as a failed auth attempt (prevents spam-cancel bypass)
+	# If you *don’t* want close to count, change this to return ["ssh: connection closed", ""].
+	if outcome == "closed":
+		outcome = "failed"
 
 	# -------------------------------------------------
 	# XP tuning (first vs repeat), safe defaults
@@ -151,8 +153,9 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 
 	# -------------------------------------------------
 	# Result handling + 3-strike lockout
+	# (DO NOT CHANGE offline_until_ms or ssh_fail_count keys)
 	# -------------------------------------------------
-	if not success:
+	if outcome != "success":
 		# increment fail counter
 		var fails: int = _get_meta_int(target, "ssh_fail_count", 0) + 1
 		target.set_meta("ssh_fail_count", fails)
@@ -168,17 +171,19 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 			if "online" in target:
 				target.online = false
 
-			lines.append("ssh: access denied (authentication failed)")
-			lines.append("+1 Hacking XP (attempt)")
-			lines.append("Too many failed attempts. Host is now offline for 2 minutes.")
-			lines.append("")
-			return lines
+			return [
+				"ssh: access denied (authentication failed)",
+				"+1 Hacking XP (attempt)",
+				"Too many failed attempts. Host is now offline for 2 minutes.",
+				""
+			]
 
-		lines.append("ssh: access denied (authentication failed)")
-		lines.append("+1 Hacking XP (attempt)")
-		lines.append("(%d/%d failed attempts)" % [fails, LOCKOUT_FAILS])
-		lines.append("")
-		return lines
+		return [
+			"ssh: access denied (authentication failed)",
+			"+1 Hacking XP (attempt)",
+			"(%d/%d failed attempts)" % [fails, LOCKOUT_FAILS],
+			""
+		]
 
 	# Success: clear fail counter + any lockout flags
 	target.set_meta("ssh_fail_count", 0)
@@ -187,6 +192,7 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		target.online = true
 
 	# Success: award XP + mark hacked (only if property exists)
+	var lines: Array[String] = []
 	if (not already_hacked) and ("was_hacked" in target):
 		target.was_hacked = true
 		stats.award_xp("hacking", first_xp)
@@ -209,6 +215,37 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 
 
 # -------------------------------------------------
+# Wait helper (no fancy OR-await in GDScript)
+# -------------------------------------------------
+func _await_minigame_result(mg: Object, tree: SceneTree) -> String:
+	var done := false
+	var result := "closed"
+
+	if mg.has_signal("crack_success"):
+		mg.connect("crack_success", Callable(self, "_on_mg_success").bind([mg, tree, [done, result]]))
+
+	# We can’t directly bind by-ref primitives, so we’ll use closures via local vars:
+	# Instead: connect to local lambdas and set outer vars (works in Godot 4).
+	mg.connect("crack_success", func():
+		done = true
+		result = "success"
+	)
+	mg.connect("crack_failed", func():
+		done = true
+		result = "failed"
+	)
+	mg.connect("crack_closed", func():
+		done = true
+		result = "closed"
+	)
+
+	while not done:
+		await tree.process_frame
+
+	return result
+
+
+# -------------------------------------------------
 # Meta helpers (avoid Variant inference warnings)
 # -------------------------------------------------
 func _get_meta_int(obj: Object, key: String, fallback: int) -> int:
@@ -217,5 +254,4 @@ func _get_meta_int(obj: Object, key: String, fallback: int) -> int:
 	var v = obj.get_meta(key)
 	if typeof(v) == TYPE_INT:
 		return int(v)
-	# allow string/float etc without blowing up
 	return int(str(v))

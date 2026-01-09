@@ -8,6 +8,8 @@ var hack_chance: float = 0.35
 var hwtype: String = "ether"
 # hw type can be: { "ether", "wifi", "cell", "bt" } that's it #
 
+# --- NETWORK PASSWORD: SETS PASSWORD FOR HACK'ING MINIGAME --- #
+var network_password: String = ""
 
 # ARP BEHAVIOR #
 enum NeighborState { INCOMPLETE, REACHABLE, STALE, DELAY, PROBE, FAILED, PERMANENT }

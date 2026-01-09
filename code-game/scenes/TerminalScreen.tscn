@@ -59,7 +59,7 @@ size_flags_vertical = 3
 [node name="Output" type="RichTextLabel" parent="VBox/Scroll/ScrollContent"]
 layout_mode = 0
 offset_right = 1593.0
-offset_bottom = 1031.0
+offset_bottom = 1015.0
 size_flags_vertical = 3
 focus_mode = 2
 mouse_filter = 1
@@ -82,6 +82,10 @@ scroll_following = true
 autowrap_mode = 0
 autowrap_trim_flags = 0
 selection_enabled = true
+
+[node name="OverlayLayer" type="Control" parent="VBox"]
+layout_mode = 2
+mouse_filter = 2
 
 [node name="InputRow" type="HBoxContainer" parent="VBox"]
 layout_mode = 2
@@ -191,5 +195,41 @@ theme_override_colors/font_color = Color(0, 0.6431373, 0.24705882, 1)
 theme_override_fonts/font = ExtResource("2_x0n36")
 theme_override_font_sizes/font_size = 20
 text = "ETH:  0.000000"
+
+[node name="ModalLayer" type="CanvasLayer" parent="."]
+layer = 100
+
+[node name="ModalWindow" type="PanelContainer" parent="ModalLayer"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -20.0
+offset_top = -20.0
+offset_right = 20.0
+offset_bottom = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="MarginContainer" type="MarginContainer" parent="ModalLayer/ModalWindow"]
+layout_mode = 2
+
+[node name="VBoxContainer" type="VBoxContainer" parent="ModalLayer/ModalWindow/MarginContainer"]
+layout_mode = 2
+
+[node name="ModalText" type="RichTextLabel" parent="ModalLayer/ModalWindow/MarginContainer/VBoxContainer"]
+layout_mode = 2
+bbcode_enabled = true
+autowrap_mode = 0
+horizontal_alignment = 3
+vertical_alignment = 3
+
+[node name="ModalHost" type="Control" parent="ModalLayer/ModalWindow/MarginContainer/VBoxContainer"]
+layout_mode = 2
+size_flags_vertical = 3
 
 [connection signal="pressed" from="SideBar/ScrollContainer/VBoxContainer/MenuBtn" to="." method="_on_menu_pressed"]

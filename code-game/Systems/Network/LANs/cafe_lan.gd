@@ -22,6 +22,7 @@ func build(world: WorldNetwork) -> void:
 	cafe.gateway_host = 1
 	world.register_network(cafe, "cafe")
 
+	cafe.network_password = ""
 
 
 
@@ -60,6 +61,7 @@ func build(world: WorldNetwork) -> void:
 	cafe_desktop.hack_chance = 0.20
 	cafe_desktop.hwtype = "ether"
 	cafe_desktop.iface = "eth0"
+	cafe_desktop.network_password = "Beans1"
 
 
 	# User dirs
