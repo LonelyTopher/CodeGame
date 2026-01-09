@@ -36,6 +36,10 @@ const JUNK_CHARS := "!@#$%^&*()_+-={}`~;:'\",.<>?/\\|"
 const WRONGS_FOR_HINT := 3
 const HINT_FLASH_SECONDS := 0.55
 
+# --- XP routing ---
+const HACKING_STAT_ID_PRIMARY := "hacking"
+const HACKING_STAT_ID_FALLBACKS := ["hack", "intrusion", "exploit"] # used only if you named it differently
+
 
 static func _letter_token(ch: String) -> String:
 	return "<%s>" % ch
@@ -87,6 +91,9 @@ var _hint_timer_running := false
 var _target_obj: Object = null
 var _p_target_is_device := false
 
+# xp bookkeeping for post-minigame animation
+var _last_xp_awarded: int = 0
+
 
 # ------------------------------------------------------------
 # BBCode safety
@@ -107,6 +114,7 @@ func setup_and_generate(
 ) -> void:
 	_rng.randomize()
 	_is_generated = false
+	_last_xp_awarded = 0
 
 	terminal = p_terminal
 	if terminal == null:
@@ -348,7 +356,6 @@ func _close_modal_silent() -> void:
 # Completion handlers
 # ------------------------------------------------------------
 func _on_crack_success() -> void:
-	# Close modal immediately then do animation + “connect”
 	_close_modal_silent()
 	_success_flow()
 
@@ -358,13 +365,15 @@ func _on_crack_failed() -> void:
 	_fail_flow()
 
 
+# ------------------------------------------------------------
+# Post-minigame animations
+# ------------------------------------------------------------
 func _success_flow() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
 	if tree == null:
 		_apply_success_connection()
 		return
 
-	# Animate on MAIN terminal screen
 	_print_main("")
 	_print_main(">> exploit accepted")
 	await tree.create_timer(0.20).timeout
@@ -377,6 +386,14 @@ func _success_flow() -> void:
 
 	_apply_success_connection()
 
+	# ✅ NEW: show XP gained (after applying success so it’s accurate)
+	if _last_xp_awarded > 0:
+		await tree.create_timer(0.10).timeout
+		_print_main(">> hacking.xp awarded: +%d" % _last_xp_awarded)
+	else:
+		await tree.create_timer(0.10).timeout
+		_print_main(">> hacking.xp awarded: +0")
+
 
 func _fail_flow() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
@@ -385,23 +402,27 @@ func _fail_flow() -> void:
 
 	_print_main("")
 
-	# WIFI: auth fail (NOT a “lockout”)
+	# Award 1 XP ONLY for lockout / failed minigame attempt (your request)
+	_last_xp_awarded = _award_hacking_xp(1)
+
+	# WIFI: auth fail (NOT a “lockout” vibe, but still a failed attempt)
 	if _is_network_target(_target_obj) and not _p_target_is_device:
 		_print_main(">> authentication failed")
 		await tree.create_timer(0.20).timeout
 		_print_main(">> cannot connect: invalid credentials")
 		await tree.create_timer(0.15).timeout
+		_print_main(">> hacking.xp awarded: +%d" % _last_xp_awarded)
 		return
 
-	# SSH / Device: keep harsher failure vibe
+	# SSH / Device: harsher failure vibe
 	_print_main(">> exploit rejected")
 	await tree.create_timer(0.20).timeout
 	_print_main(">> attempts exhausted")
 	await tree.create_timer(0.20).timeout
 	_print_main(">> LOCKED OUT")
 	await tree.create_timer(0.15).timeout
+	_print_main(">> hacking.xp awarded: +%d" % _last_xp_awarded)
 
-	# optional hook for your command system
 	if terminal != null and terminal.has_method("on_minigame_failed"):
 		terminal.call("on_minigame_failed", {"target": _target_obj, "target_ip": target_ip})
 
@@ -414,19 +435,114 @@ func _print_main(line: String) -> void:
 
 
 # ------------------------------------------------------------
+# XP AWARDING (uses your StatsSystem)
+# ------------------------------------------------------------
+func _get_stats_system() -> Node:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return null
+	var root := tree.get_root()
+	return root.get_node_or_null("/root/StatsSystem")
+
+
+func _resolve_hacking_stat_id(stats_system: Node) -> String:
+	if stats_system == null:
+		return HACKING_STAT_ID_PRIMARY
+
+	if stats_system.has_method("has_stat") and stats_system.call("has_stat", HACKING_STAT_ID_PRIMARY):
+		return HACKING_STAT_ID_PRIMARY
+
+	# fallback tries only if you named it differently
+	if stats_system.has_method("has_stat"):
+		for sid in HACKING_STAT_ID_FALLBACKS:
+			if stats_system.call("has_stat", sid):
+				return sid
+
+	# default (will just award 0 if missing)
+	return HACKING_STAT_ID_PRIMARY
+
+
+func _award_hacking_xp(amount: int) -> int:
+	if amount <= 0:
+		return 0
+
+	var ss := _get_stats_system()
+	if ss == null:
+		return 0
+
+	var stat_id := _resolve_hacking_stat_id(ss)
+
+	if ss.has_method("award_xp"):
+		# StatsSystem.award_xp returns gained after diminishing returns
+		return int(ss.call("award_xp", stat_id, int(amount)))
+
+	return 0
+
+
+func _award_xp_for_device(dev: Object) -> int:
+	if dev == null:
+		return 0
+
+	var already := false
+	if "was_hacked" in dev:
+		already = bool(dev.get("was_hacked"))
+	elif dev.has_meta("was_hacked"):
+		already = bool(dev.get_meta("was_hacked"))
+
+	var xp_first := _get_int_field(dev, "hack_xp_first", 0)
+	var xp_repeat := _get_int_field(dev, "hack_xp_repeat", 0)
+
+	var award := xp_repeat if already else xp_first
+	var gained := _award_hacking_xp(award)
+
+	# Mark device as hacked
+	if "was_hacked" in dev:
+		dev.set("was_hacked", true)
+	else:
+		dev.set_meta("was_hacked", true)
+
+	return gained
+
+
+func _award_xp_for_network(net: Object) -> int:
+	if net == null:
+		return 0
+	var base := _get_int_field(net, "hack_xp", 0)
+	return _award_hacking_xp(base)
+
+
+func _get_int_field(o: Object, field: String, fallback: int = 0) -> int:
+	if o == null:
+		return fallback
+	if field in o:
+		var v = o.get(field)
+		if v == null:
+			return fallback
+		return int(v)
+	if o.has_meta(field):
+		var mv = o.get_meta(field)
+		if mv == null:
+			return fallback
+		return int(mv)
+	return fallback
+
+
+# ------------------------------------------------------------
 # Connection application (SSH vs Network)
 # ------------------------------------------------------------
 func _apply_success_connection() -> void:
 	# ------------------------------------------------------------
-	# SSH TARGET (Device) → KEEP EXISTING BEHAVIOR
+	# SSH TARGET (Device)
 	# ------------------------------------------------------------
 	if _p_target_is_device:
-		# Let external systems override if they want
+		var dev_for_xp := _extract_device(_target_obj)
+		_last_xp_awarded = _award_xp_for_device(dev_for_xp)
+
+		# Keep existing success behavior
 		if terminal != null and terminal.has_method("on_minigame_success"):
 			terminal.call("on_minigame_success", {"target": _target_obj, "target_ip": target_ip})
 			return
 
-		# SSH-like: push device into terminal stack
 		var dev := _extract_device(_target_obj)
 		if dev != null:
 			_enter_remote_session(dev)
@@ -437,8 +553,7 @@ func _apply_success_connection() -> void:
 		return
 
 	# ------------------------------------------------------------
-	# WIFI / NETWORK TARGET → APPLY REAL NETWORK ATTACH HERE
-	# This is what was missing: attach_to_network() + IP assignment.
+	# WIFI / NETWORK TARGET
 	# ------------------------------------------------------------
 	if _is_network_target(_target_obj) and source_device != null:
 		if source_device.has_method("detach_from_network") and source_device.has_method("attach_to_network"):
@@ -449,7 +564,15 @@ func _apply_success_connection() -> void:
 			# Attach to new network (assigns IP)
 			source_device.call("attach_to_network", _target_obj)
 
-			# Print the “cmd_connect style” output + extra realism lines
+			# ✅ Award XP for network
+			_last_xp_awarded = _award_xp_for_network(_target_obj)
+
+			# Mark network hacked (password remembered)
+			if "was_hacked" in _target_obj:
+				_target_obj.set("was_hacked", true)
+			else:
+				_target_obj.set_meta("was_hacked", true)
+
 			var ssid := _get_field_str(_target_obj, "name", "unknown-ssid")
 			var subnet := _get_field_str(_target_obj, "subnet", "--")
 			var new_ip := _get_dev_field_str(source_device, "ip_address", "--")
@@ -460,7 +583,6 @@ func _apply_success_connection() -> void:
 			_print_main("Assigned IP address: %s" % new_ip)
 			_print_main("")
 
-			# 10–12 “junk” / realistic info lines (safe: only uses fields if present)
 			var vendor := _get_field_str(_target_obj, "vendor", "unknown")
 			var notes := _get_field_str(_target_obj, "notes", "none")
 			var visibility := _get_field_str(_target_obj, "visibility", "Public")
@@ -483,28 +605,22 @@ func _apply_success_connection() -> void:
 			_print_main(">> hint: run 'arp' to discover devices on this network.")
 			return
 
-	# Fallback
 	_print_main(">> connection established")
 
 
 func _enter_remote_session(dev: Object) -> void:
-	# This matches your Terminal design: device_stack + current_device
-	# and should make terminal interpret subsequent commands as remote.
 	if terminal == null:
 		return
 
-	# device_stack
 	if "device_stack" in terminal:
 		var st = terminal.get("device_stack")
 		if st is Array:
 			st.append(dev)
 			terminal.set("device_stack", st)
 
-	# current_device
 	if "current_device" in terminal:
 		terminal.set("current_device", dev)
 
-	# Optional: if terminal exposes a helper method
 	if terminal.has_method("set_current_device"):
 		terminal.call("set_current_device", dev)
 
@@ -512,10 +628,8 @@ func _enter_remote_session(dev: Object) -> void:
 func _is_device_target(t: Object) -> bool:
 	if t == null:
 		return false
-	# Direct device instance
 	if t is Device:
 		return true
-	# Wrapper contains .device
 	if "device" in t:
 		var d = t.get("device")
 		return (d != null)
@@ -532,7 +646,7 @@ func _extract_device(t: Object) -> Object:
 	return null
 
 
-# NEW: identify network-ish targets safely
+# identify network-ish targets safely
 func _is_network_target(t: Object) -> bool:
 	if t == null:
 		return false
@@ -545,7 +659,7 @@ func _is_network_target(t: Object) -> bool:
 	return false
 
 
-# NEW: simple flexible getter (like _get_dev_field_str but generic)
+# generic field getter
 func _get_field_str(o: Object, field: String, fallback: String = "--") -> String:
 	if o == null:
 		return fallback
@@ -564,7 +678,6 @@ func _get_field_str(o: Object, field: String, fallback: String = "--") -> String
 	return fallback
 
 
-# NEW: helper for x.y.z from x.y.z.w
 func _ip_prefix_24(ip: String) -> String:
 	if ip == null:
 		return ""

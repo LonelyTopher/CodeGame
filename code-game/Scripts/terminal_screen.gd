@@ -176,6 +176,10 @@ func _on_input_submitted(text: String) -> void:
 	# NORMAL TERMINAL MODE
 	_print_line("[color=lime]%s %s[/color]" % [_prompt_text(), line])
 
+	# ✅ clear immediately so async commands don't leave text sitting there
+	input.clear()
+	call_deferred("_refocus_input")
+
 	var results: Array[String] = await term.execute(line)
 
 	for r in results:
@@ -187,11 +191,8 @@ func _on_input_submitted(text: String) -> void:
 			continue
 		_print_line(r)
 
-	input.clear()
 	_update_prompt()
-	call_deferred("_refocus_input")
 	call_deferred("_scroll_to_bottom")
-
 
 # -------------------------------------------------
 # OUTPUT HELPERS
@@ -406,9 +407,6 @@ func _on_overlay_gui_input(event: InputEvent) -> void:
 					call_deferred("_refocus_input")
 			accept_event()
 			return
-
-
-# --- Minigame Separate Window Functions --- #
 
 # --- Minigame Separate Window Functions --- #
 

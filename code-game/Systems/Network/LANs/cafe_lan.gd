@@ -22,25 +22,23 @@ func build(world: WorldNetwork) -> void:
 	cafe.gateway_host = 1
 	world.register_network(cafe, "cafe")
 
+# --- MINIGAME ATTRIBUTES --- #
 	cafe.network_password = "Beans"
+	cafe.was_hacked = false
 
 
 
 
 
-	# =================================================
 	# ROUTER / GATEWAY (forced .1)
-	# =================================================
 
 	var cafe_gateway: Device = Device.new()
 	cafe_gateway.hostname = "netgear-ap"
 	cafe_gateway.hack_chance = 0.10
 
-	# Make the router MAC match the BSSID you already assigned to the network (nice realism)
-	# (Only do this if your Device.mac is writable and not auto-generated/locked.)
 	cafe_gateway.mac = cafe.bssid
 
-	# ARP identity fields
+	# ARP stuff #
 	cafe_gateway.hwtype = "ether"
 	cafe_gateway.iface = "eth0"
 	cafe_gateway.arp_flags = "R"
@@ -48,7 +46,6 @@ func build(world: WorldNetwork) -> void:
 	cafe_gateway.netmask = "255.255.255.0"
 	cafe_gateway.online = true
 
-	# IMPORTANT: This is what forces .1 (DO NOT use attach_to_network for the router)
 	cafe.attach_router(cafe_gateway)
 
 
@@ -447,7 +444,7 @@ func build(world: WorldNetwork) -> void:
 	jacks_laptop.mac = jacks_laptop.get_mac()
 	jacks_laptop.hwtype = "bt"
 	jacks_laptop.iface = "wlan0"
-	
+	jacks_laptop.network_password = "DontGuess0MyPassword1"
 	
 	jacks_laptop.fs.mkdir("/home/stash")
 	jacks_laptop.fs.write_file(

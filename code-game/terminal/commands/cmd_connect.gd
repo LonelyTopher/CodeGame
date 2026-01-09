@@ -66,13 +66,21 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	screen.append_line("Connecting to '%s'..." % ssid)
 
 	# -------------------------------------------------
-	# If the network has a password, launch the minigame.
-	# If no password, connect immediately.
+	# If the network has a password, launch the minigame
+	# ONLY if we haven't already hacked this network.
 	# -------------------------------------------------
 	var pw := _get_network_password(target)
 	var needs_auth := _has_password(pw)
 
-	if needs_auth:
+	# Read was_hacked safely (works even if property doesn't exist yet)
+	var was_hacked := false
+	if "was_hacked" in target:
+		was_hacked = bool(target.get("was_hacked"))
+	elif target.has_meta("was_hacked"):
+		was_hacked = bool(target.get_meta("was_hacked"))
+
+	# Only prompt for auth if passworded AND not already hacked
+	if needs_auth and not was_hacked:
 		# Cosmetic progress bar (optional but nice)
 		var bar_index: int = screen.append_line("[----------]")
 		var total := 10
@@ -103,8 +111,15 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 				""
 			]
 
+		# Mark the network as hacked so future connects skip the minigame
+		if "was_hacked" in target:
+			target.set("was_hacked", true)
+		else:
+			# Fallback in case you're using metadata for some networks
+			target.set_meta("was_hacked", true)
+
 	# -------------------------------------------------
-	# SUCCESS PATH (either no password OR minigame success)
+	# SUCCESS PATH (either no password OR already hacked OR minigame success)
 	# -------------------------------------------------
 	# Disconnect from current network (if any)
 	if d.network != null:

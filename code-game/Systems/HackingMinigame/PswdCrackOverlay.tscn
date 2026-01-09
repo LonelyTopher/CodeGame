@@ -1,4 +1,4 @@
-[gd_scene load_steps=4 format=3 uid="uid://dgaw6cap44jkc"]
+[gd_scene load_steps=4 format=3 uid="uid://bht7ropv6g2nw"]
 
 [ext_resource type="Script" uid="uid://7fwjpt31v6uh" path="res://Systems/HackingMinigame/PswdCrackOverlay.gd" id="1_krfec"]
 [ext_resource type="FontFile" uid="uid://ckwr31dceq0ri" path="res://Assets/Fonts/RobotoMono-VariableFont_wght.ttf" id="2_fwn46"]
