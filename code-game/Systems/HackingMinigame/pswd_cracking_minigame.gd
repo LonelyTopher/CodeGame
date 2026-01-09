@@ -13,14 +13,12 @@ const DEFAULT_ATTEMPTS := 10
 const INVALID_POS := Vector2i(-999, -999)
 
 # Mouse alignment tuning:
-# - If highlight is LEFT of your mouse, increase X bias (try 10, 20, 30)
-# - If highlight is RIGHT of your mouse, decrease X bias (try -10, -20)
 const MOUSE_X_BIAS_PX := 0.0
-const MOUSE_Y_BIAS_FRAC := 0.35  # tweak 0.20–0.35 if needed
+const MOUSE_Y_BIAS_FRAC := 0.25
 
 # Visual tuning
-const SOUP_COLOR := "#1fbf4a" # darker terminal green for soup
-const TOKEN_COLOR := "lime"   # bright tokens
+const SOUP_COLOR := "#008000"
+const TOKEN_COLOR := "lime"
 
 const SPECIAL_TOKENS: Array[Dictionary] = [
 	{"text":"<@", "effect":"GAIN_ATTEMPT"},
@@ -38,6 +36,7 @@ const JUNK_CHARS := "!@#$%^&*()_+-={}`~;:'\",.<>?/\\|"
 const WRONGS_FOR_HINT := 3
 const HINT_FLASH_SECONDS := 0.55
 
+
 static func _letter_token(ch: String) -> String:
 	return "<%s>" % ch
 
@@ -46,7 +45,8 @@ static func _letter_token(ch: String) -> String:
 # Public state
 # ------------------------------------------------------------
 var terminal: Terminal = null
-var screen: Node = null
+var screen: Node = null             # modal surface
+var _main_screen: Node = null       # underlying terminal screen (where animations print)
 var source_device: Device = null
 var target_ip: String = "--"
 
@@ -83,8 +83,9 @@ var _wrong_streak := 0
 var _hint_token_id := -1
 var _hint_timer_running := false
 
-var _cached_line_h: float = -1.0
-var _cached_char_w: float = -1.0
+# for success/fail routing
+var _target_obj: Object = null
+var _p_target_is_device := false
 
 
 # ------------------------------------------------------------
@@ -112,13 +113,15 @@ func setup_and_generate(
 		push_error("PswdCrackingMinigame: terminal is null")
 		return
 
-	# Default to terminal screen
-	screen = terminal.screen
-	if screen == null:
+	_main_screen = terminal.screen
+	if _main_screen == null:
 		push_error("PswdCrackingMinigame: terminal.screen is null")
 		return
 
-	# Open center modal window and print into that surface
+	# Default to terminal screen (but we will swap to modal surface)
+	screen = _main_screen
+
+	# OPEN CENTER MODAL WINDOW and print into that surface
 	if screen.has_method("open_modal_window"):
 		var modal_surface = screen.call("open_modal_window", self)
 		if modal_surface != null:
@@ -128,10 +131,21 @@ func setup_and_generate(
 	attempts_left = p_attempts
 	difficulty_tier = _tier_from_hack_chance(p_hack_chance)
 
-	# Authored password
+	_target_obj = p_target
+	_p_target_is_device = _is_device_target(_target_obj)
+
+	# Hook signals (avoid double connect)
+	if is_connected("crack_success", Callable(self, "_on_crack_success")):
+		disconnect("crack_success", Callable(self, "_on_crack_success"))
+	if is_connected("crack_failed", Callable(self, "_on_crack_failed")):
+		disconnect("crack_failed", Callable(self, "_on_crack_failed"))
+	connect("crack_success", Callable(self, "_on_crack_success"))
+	connect("crack_failed", Callable(self, "_on_crack_failed"))
+
+	# AUTHORED PASSWORD
 	_password = _get_target_password(p_target)
 	if _password == "":
-		_password = "ADMIN" # fallback
+		_password = "ADMIN"
 
 	_password = _sanitize_password(_password)
 
@@ -150,9 +164,6 @@ func setup_and_generate(
 	_wrong_streak = 0
 	_hint_token_id = -1
 	_hint_timer_running = false
-
-	_cached_line_h = -1.0
-	_cached_char_w = -1.0
 
 	_build_grid()
 	_print_block()
@@ -179,7 +190,6 @@ func _get_target_password(p_target: Object) -> String:
 	return ""
 
 
-# Make password letters/digits only.
 func _sanitize_password(s: String) -> String:
 	var up := s.strip_edges().to_upper()
 	var out := ""
@@ -315,6 +325,7 @@ func _pick_cell_internal(row: int, col: int) -> String:
 	return "junk"
 
 
+# Manual close
 func close() -> void:
 	_is_generated = false
 	_status = "TRACE: > closed"
@@ -324,6 +335,243 @@ func close() -> void:
 		terminal.screen.call("close_modal_window")
 
 	emit_signal("crack_closed")
+
+
+# SUCCESS/FAIL CLOSE (silent)
+func _close_modal_silent() -> void:
+	_is_generated = false
+	if terminal != null and terminal.screen != null and terminal.screen.has_method("close_modal_window"):
+		terminal.screen.call("close_modal_window")
+
+
+# ------------------------------------------------------------
+# Completion handlers
+# ------------------------------------------------------------
+func _on_crack_success() -> void:
+	# Close modal immediately then do animation + “connect”
+	_close_modal_silent()
+	_success_flow()
+
+
+func _on_crack_failed() -> void:
+	_close_modal_silent()
+	_fail_flow()
+
+
+func _success_flow() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		_apply_success_connection()
+		return
+
+	# Animate on MAIN terminal screen
+	_print_main("")
+	_print_main(">> exploit accepted")
+	await tree.create_timer(0.20).timeout
+	_print_main(">> negotiating handshake...")
+	await tree.create_timer(0.25).timeout
+	_print_main(">> elevating session...")
+	await tree.create_timer(0.25).timeout
+	_print_main(">> ACCESS GRANTED")
+	await tree.create_timer(0.15).timeout
+
+	_apply_success_connection()
+
+
+func _fail_flow() -> void:
+	var tree := Engine.get_main_loop() as SceneTree
+	if tree == null:
+		return
+
+	_print_main("")
+
+	# WIFI: auth fail (NOT a “lockout”)
+	if _is_network_target(_target_obj) and not _p_target_is_device:
+		_print_main(">> authentication failed")
+		await tree.create_timer(0.20).timeout
+		_print_main(">> cannot connect: invalid credentials")
+		await tree.create_timer(0.15).timeout
+		return
+
+	# SSH / Device: keep harsher failure vibe
+	_print_main(">> exploit rejected")
+	await tree.create_timer(0.20).timeout
+	_print_main(">> attempts exhausted")
+	await tree.create_timer(0.20).timeout
+	_print_main(">> LOCKED OUT")
+	await tree.create_timer(0.15).timeout
+
+	# optional hook for your command system
+	if terminal != null and terminal.has_method("on_minigame_failed"):
+		terminal.call("on_minigame_failed", {"target": _target_obj, "target_ip": target_ip})
+
+
+func _print_main(line: String) -> void:
+	if _main_screen == null:
+		return
+	if _main_screen.has_method("append_line"):
+		_main_screen.call("append_line", line)
+
+
+# ------------------------------------------------------------
+# Connection application (SSH vs Network)
+# ------------------------------------------------------------
+func _apply_success_connection() -> void:
+	# ------------------------------------------------------------
+	# SSH TARGET (Device) → KEEP EXISTING BEHAVIOR
+	# ------------------------------------------------------------
+	if _p_target_is_device:
+		# Let external systems override if they want
+		if terminal != null and terminal.has_method("on_minigame_success"):
+			terminal.call("on_minigame_success", {"target": _target_obj, "target_ip": target_ip})
+			return
+
+		# SSH-like: push device into terminal stack
+		var dev := _extract_device(_target_obj)
+		if dev != null:
+			_enter_remote_session(dev)
+			_print_main(">> session: remote shell opened")
+			return
+
+		_print_main(">> connection established")
+		return
+
+	# ------------------------------------------------------------
+	# WIFI / NETWORK TARGET → APPLY REAL NETWORK ATTACH HERE
+	# This is what was missing: attach_to_network() + IP assignment.
+	# ------------------------------------------------------------
+	if _is_network_target(_target_obj) and source_device != null:
+		if source_device.has_method("detach_from_network") and source_device.has_method("attach_to_network"):
+			# Detach old network (if any)
+			if "network" in source_device and source_device.get("network") != null:
+				source_device.call("detach_from_network")
+
+			# Attach to new network (assigns IP)
+			source_device.call("attach_to_network", _target_obj)
+
+			# Print the “cmd_connect style” output + extra realism lines
+			var ssid := _get_field_str(_target_obj, "name", "unknown-ssid")
+			var subnet := _get_field_str(_target_obj, "subnet", "--")
+			var new_ip := _get_dev_field_str(source_device, "ip_address", "--")
+			var ip_prefix := _ip_prefix_24(new_ip)
+
+			_print_main(">> connection established")
+			_print_main("Network: %s" % subnet)
+			_print_main("Assigned IP address: %s" % new_ip)
+			_print_main("")
+
+			# 10–12 “junk” / realistic info lines (safe: only uses fields if present)
+			var vendor := _get_field_str(_target_obj, "vendor", "unknown")
+			var notes := _get_field_str(_target_obj, "notes", "none")
+			var visibility := _get_field_str(_target_obj, "visibility", "Public")
+			var security := _get_field_str(_target_obj, "security", _get_field_str(_target_obj, "encryption", "OPEN"))
+			var bssid := _get_field_str(_target_obj, "bssid", "--")
+			var channel := _get_field_str(_target_obj, "channel", _get_field_str(_target_obj, "chan", "--"))
+			var mode := _get_field_str(_target_obj, "mode", "--")
+
+			_print_main(">> ssid..............: %s" % ssid)
+			_print_main(">> bssid.............: %s" % bssid)
+			_print_main(">> vendor............: %s" % vendor)
+			_print_main(">> security..........: %s" % security)
+			_print_main(">> radio.mode........: %s" % mode)
+			_print_main(">> radio.channel.....: %s" % channel)
+			_print_main(">> dhcp.lease........: granted")
+			_print_main(">> route.default.....: %s" % (("%s.1" % ip_prefix) if ip_prefix != "" else "assigned"))
+			_print_main(">> dns.server........: %s" % (("%s.1" % ip_prefix) if ip_prefix != "" else "auto"))
+			_print_main(">> network.visibility: %s" % visibility)
+			_print_main(">> network.notes.....: %s" % notes)
+			_print_main(">> hint: run 'arp' to discover devices on this network.")
+			return
+
+	# Fallback
+	_print_main(">> connection established")
+
+
+func _enter_remote_session(dev: Object) -> void:
+	# This matches your Terminal design: device_stack + current_device
+	# and should make terminal interpret subsequent commands as remote.
+	if terminal == null:
+		return
+
+	# device_stack
+	if "device_stack" in terminal:
+		var st = terminal.get("device_stack")
+		if st is Array:
+			st.append(dev)
+			terminal.set("device_stack", st)
+
+	# current_device
+	if "current_device" in terminal:
+		terminal.set("current_device", dev)
+
+	# Optional: if terminal exposes a helper method
+	if terminal.has_method("set_current_device"):
+		terminal.call("set_current_device", dev)
+
+
+func _is_device_target(t: Object) -> bool:
+	if t == null:
+		return false
+	# Direct device instance
+	if t is Device:
+		return true
+	# Wrapper contains .device
+	if "device" in t:
+		var d = t.get("device")
+		return (d != null)
+	return false
+
+
+func _extract_device(t: Object) -> Object:
+	if t == null:
+		return null
+	if t is Device:
+		return t
+	if "device" in t:
+		return t.get("device")
+	return null
+
+
+# NEW: identify network-ish targets safely
+func _is_network_target(t: Object) -> bool:
+	if t == null:
+		return false
+	if "subnet" in t:
+		return true
+	if "ssid" in t:
+		return true
+	if "name" in t and "network_password" in t:
+		return true
+	return false
+
+
+# NEW: simple flexible getter (like _get_dev_field_str but generic)
+func _get_field_str(o: Object, field: String, fallback: String = "--") -> String:
+	if o == null:
+		return fallback
+	if field in o:
+		var v = o.get(field)
+		if v == null:
+			return fallback
+		var s := str(v)
+		return fallback if s == "" else s
+	if o.has_meta(field):
+		var mv = o.get_meta(field)
+		if mv == null:
+			return fallback
+		var ms := str(mv)
+		return fallback if ms == "" else ms
+	return fallback
+
+
+# NEW: helper for x.y.z from x.y.z.w
+func _ip_prefix_24(ip: String) -> String:
+	if ip == null:
+		return ""
+	var parts := ip.split(".", false)
+	if parts.size() < 3:
+		return ""
+	return "%s.%s.%s" % [parts[0], parts[1], parts[2]]
 
 
 # ------------------------------------------------------------
@@ -359,14 +607,10 @@ func _render_grid_row(row: int) -> void:
 	screen.replace_line(_block_base_line + HEADER_LINES + 1 + row, _rendered_row_string(row))
 
 
-# IMPORTANT:
-# We do ALL column math on a PLAIN string (no BBCode in base),
-# then we splice in BBCode ONLY for tokens/segments safely.
 func _rendered_row_string(row: int) -> String:
 	var base_plain := _bb_escape(_pad_to_width(_grid[row], GRID_W))
 	var stamps: Array[Dictionary] = []
 
-	# Token stamps (unused only)
 	for id in _tokens.keys():
 		var tid := int(id)
 		var t: Dictionary = _tokens[tid]
@@ -390,7 +634,6 @@ func _rendered_row_string(row: int) -> String:
 		var decorated := _decorate_token(tid, t, hovered, hinted)
 		stamps.append({"x": origin.x, "vis_len": visible_len, "bb": decorated})
 
-	# Hovered junk cell highlight
 	if row == _hover_row and _hover_token_id == -1 and _hover_col >= 0 and _hover_col < GRID_W:
 		var ch := base_plain.substr(_hover_col, 1)
 		var bb := "[bgcolor=#1b3a1b]%s[/bgcolor]" % ch
@@ -416,16 +659,13 @@ func _rendered_row_string(row: int) -> String:
 		if x + ln > GRID_W:
 			ln = GRID_W - x
 
-		# soup segment (colored)
 		var seg := base_plain.substr(cursor, x - cursor)
 		if seg != "":
 			out += "[color=%s]%s[/color]" % [SOUP_COLOR, seg]
 
-		# token segment (already BBCode)
 		out += bb
 		cursor = x + ln
 
-	# trailing soup (colored)
 	var tail := base_plain.substr(cursor, GRID_W - cursor)
 	if tail != "":
 		out += "[color=%s]%s[/color]" % [SOUP_COLOR, tail]
@@ -433,7 +673,6 @@ func _rendered_row_string(row: int) -> String:
 	return out
 
 
-# Only LETTER tokens get colored; specials stay soup-like.
 func _decorate_token(_token_id: int, t: Dictionary, hovered: bool, hinted: bool) -> String:
 	var kind := str(t.get("kind", ""))
 	var txt := _bb_escape(str(t.get("text", "")))
@@ -442,7 +681,6 @@ func _decorate_token(_token_id: int, t: Dictionary, hovered: bool, hinted: bool)
 	if kind == "letter":
 		rendered = "[color=%s]%s[/color]" % [TOKEN_COLOR, txt]
 	elif kind == "special":
-		# stays soup-ish (no special color)
 		rendered = txt
 
 	if hinted:
@@ -460,7 +698,6 @@ func _header_line_1() -> String:
 	return "ATTEMPTS REMAINING: %d" % attempts_left
 
 func _header_line_2() -> String:
-	# hostname fallback improvements
 	var src_host := _get_dev_field_str(source_device, "hostname", "")
 	if src_host == "":
 		src_host = _get_dev_field_str(source_device, "device_hostname", "")
@@ -492,7 +729,6 @@ func _click_letter_token(token_id: int, t: Dictionary) -> String:
 
 	if letter == needed:
 		_wrong_streak = 0
-
 		_tokens[token_id]["used"] = true
 		_dim_token_in_grid(token_id)
 
@@ -506,11 +742,9 @@ func _click_letter_token(token_id: int, t: Dictionary) -> String:
 			return "granted"
 		return "correct"
 
-	# Wrong
 	attempts_left -= 1
 	_wrong_streak += 1
 
-	# Only consume if NOT needed later
 	var still_needed := _is_letter_needed_in_remaining_password(letter)
 	if not still_needed:
 		_tokens[token_id]["used"] = true
@@ -532,7 +766,6 @@ func _click_letter_token(token_id: int, t: Dictionary) -> String:
 func _click_special_token(token_id: int, t: Dictionary) -> String:
 	_tokens[token_id]["used"] = true
 	_dim_token_in_grid(token_id)
-
 	_wrong_streak = 0
 
 	var effect := str(t.get("effect", ""))
@@ -625,7 +858,7 @@ func _ensure_remaining_password_letters_present() -> void:
 	if _reveal_index >= _password.length():
 		return
 
-	var unused_counts: Dictionary = {} # char -> count
+	var unused_counts: Dictionary = {}
 	for id in _tokens.keys():
 		var tid := int(id)
 		var t: Dictionary = _tokens[tid]
@@ -644,7 +877,6 @@ func _ensure_remaining_password_letters_present() -> void:
 		if int(unused_counts.get(need, 0)) > 0:
 			continue
 
-		# Restore an already-used token in-place
 		for id in _tokens.keys():
 			var tid := int(id)
 			var t: Dictionary = _tokens[tid]
@@ -675,7 +907,6 @@ func _start_cursor_blink() -> void:
 		return
 	_cursor_task_running = true
 	_cursor_blink_loop()
-
 
 func _cursor_blink_loop() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
@@ -719,7 +950,7 @@ func _trace_line(result_key: String, input_line: String) -> String:
 
 
 # ------------------------------------------------------------
-# Mouse mapping (stable)
+# Mouse mapping
 # ------------------------------------------------------------
 func _mouse_to_row_col(local_pos: Vector2, output: RichTextLabel, _scroll_unused) -> Vector2i:
 	if output == null:
@@ -730,7 +961,6 @@ func _mouse_to_row_col(local_pos: Vector2, output: RichTextLabel, _scroll_unused
 	if line_h <= 0.0 or char_w <= 0.0:
 		return INVALID_POS
 
-	# Account for label padding/margins + your manual tweak knobs
 	var left_pad := _get_rtl_left_padding(output)
 	var top_pad := _get_rtl_top_padding(output)
 
@@ -740,9 +970,7 @@ func _mouse_to_row_col(local_pos: Vector2, output: RichTextLabel, _scroll_unused
 	var global_line := int(floor(y / line_h))
 	var global_col := int(floor(x / char_w))
 
-	# Lines: 0..4 header, line 5 dashed, grid starts at line 6.
 	var grid_start_line := HEADER_LINES + 1
-
 	var row := global_line - grid_start_line
 	var col := global_col
 
@@ -811,34 +1039,28 @@ func _build_grid() -> void:
 	_grid.clear()
 	_next_token_id = 1
 
-	# Fill soup first
 	for y in range(GRID_H):
 		var line := ""
 		for x in range(GRID_W):
 			line += JUNK_CHARS[_rng.randi_range(0, JUNK_CHARS.length() - 1)]
 		_grid.append(line)
 
-	# Required tokens (exact password letters, incl duplicates)
 	var letters_to_place: Array[String] = []
 	for i in range(_password.length()):
 		letters_to_place.append(_password.substr(i, 1))
 
-	# Decoys
 	var decoys := _decoy_count_for_tier(difficulty_tier)
 	for i in range(decoys):
 		letters_to_place.append(_random_decoy_char_not_in_password())
 
-	# Specials
 	var specials_to_place: Array[Dictionary] = []
 	var specials := _special_count_for_tier(difficulty_tier)
 	for i in range(specials):
 		specials_to_place.append(SPECIAL_TOKENS[_rng.randi_range(0, SPECIAL_TOKENS.size() - 1)])
 
-	# Shuffle
 	letters_to_place.shuffle()
 	specials_to_place.shuffle()
 
-	# Place letters (width 3: "<A>")
 	var free3 := _gather_free_starts(3)
 	free3.shuffle()
 
@@ -849,12 +1071,10 @@ func _build_grid() -> void:
 			if _can_place_at(pos.x, pos.y, 3):
 				_place_letter_token_at(ch, pos.x, pos.y)
 				placed = true
-
 		if not placed:
 			_build_grid()
 			return
 
-	# Place specials (width 2)
 	var free2 := _gather_free_starts(2)
 	free2.shuffle()
 
@@ -862,7 +1082,6 @@ func _build_grid() -> void:
 		var token_text := str(sp["text"])
 		var effect := str(sp["effect"])
 		var placed := false
-
 		while free2.size() > 0 and not placed:
 			var pos2: Vector2i = free2.pop_back()
 			if _can_place_at(pos2.x, pos2.y, 2):
@@ -899,7 +1118,7 @@ func _stamp_text(x: int, y: int, text: String) -> void:
 
 
 func _place_letter_token_at(letter: String, x: int, y: int) -> void:
-	var token_text := _letter_token(letter) # "<A>" len 3
+	var token_text := _letter_token(letter)
 	var id := _new_token_id()
 	var cells: Array[Vector2i] = [Vector2i(x, y), Vector2i(x + 1, y), Vector2i(x + 2, y)]
 	_tokens[id] = {"kind":"letter","text":token_text,"cells":cells,"used":false,"letter":letter}

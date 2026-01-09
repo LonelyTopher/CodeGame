@@ -22,7 +22,7 @@ func build(world: WorldNetwork) -> void:
 	cafe.gateway_host = 1
 	world.register_network(cafe, "cafe")
 
-	cafe.network_password = ""
+	cafe.network_password = "Beans"
 
 
 
