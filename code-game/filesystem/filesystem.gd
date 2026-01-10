@@ -2,8 +2,9 @@ extends RefCounted
 class_name FileSystem
 
 # ---- Data model: nested dictionaries ----
-# A directory is: { "type":"dir", "children": { name: node, ... } }
-# A file is:      { "type":"file", "content":"..." }
+# A directory node is: { "type":"dir", "children": { name: node, ... } }
+# A file node is:      { "type":"file", "content":"..." }
+# A data node is:      { "type":"data", "data":Dictionary, "protected":bool, "meta":Dictionary }
 
 var root: Dictionary = {
 	"type": "dir",
@@ -59,6 +60,20 @@ func _base_name(path: String) -> String:
 	var parts := _split_path(path)
 	return "" if parts.is_empty() else parts[-1]
 
+# ---------- NEW: Low-level node getter ----------
+func _get_node(path: String) -> Dictionary:
+	# Returns file/dir/data node dictionary or {} if missing
+	if path == "/":
+		return root
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		return {}
+	var name := _base_name(path)
+	var children: Dictionary = parent.get("children", {})
+	if not children.has(name):
+		return {}
+	return children[name]
+
 # ---------- Query ----------
 func exists(path: String) -> bool:
 	if path == "/":
@@ -100,8 +115,11 @@ func read_file(path: String) -> String:
 	if not children.has(name):
 		return ""
 	var node: Dictionary = children[name]
+
+	# Only plaintext files are readable by cat/read_file
 	if node.get("type","") != "file":
 		return ""
+
 	return String(node.get("content",""))
 
 # ---------- Mutations ----------
@@ -120,7 +138,6 @@ func mkdir(path: String) -> bool:
 	# If parent lookup failed, root is the fallback for top-level dirs like "/etc"
 	if parent.is_empty():
 		parent = root
-
 
 	# Parent must be a directory node with children
 	if not parent.has("children") or typeof(parent["children"]) != TYPE_DICTIONARY:
@@ -168,6 +185,58 @@ func write_file(path: String, content: String) -> bool:
 	children[name] = {"type":"file", "content": content}
 	return true
 
+# ---------- NEW: Data-file support ----------
+func is_data_file(path: String) -> bool:
+	var node := _get_node(path)
+	return (not node.is_empty()) and node.get("type","") == "data"
+
+func write_data_file(path: String, data: Dictionary, protected: bool = false, meta: Dictionary = {}) -> bool:
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		parent = root
+	var name := _base_name(path)
+	if name == "":
+		return false
+
+	var children: Dictionary = parent["children"]
+	children[name] = {
+		"type": "data",
+		"data": data,
+		"protected": protected,
+		"meta": meta
+	}
+	return true
+
+func read_data_file(path: String) -> Dictionary:
+	var node := _get_node(path)
+	if node.is_empty():
+		return {}
+	if node.get("type","") != "data":
+		return {}
+	return node.get("data", {})
+
+func set_data_file(path: String, new_data: Dictionary) -> bool:
+	# Only allows setting if it's NOT protected
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		return false
+	var name := _base_name(path)
+	var children: Dictionary = parent["children"]
+	if not children.has(name):
+		return false
+
+	var node: Dictionary = children[name]
+	if node.get("type","") != "data":
+		return false
+
+	if bool(node.get("protected", false)):
+		# Block normal edits to protected data files
+		return false
+
+	node["data"] = new_data
+	children[name] = node
+	return true
+
 # Removes a file OR directory entry from its parent (subtree disappears if it's a dir).
 func remove(path: String) -> bool:
 	if path == "/" or path.strip_edges() == "":
@@ -204,7 +273,6 @@ func remove_file(path: String) -> bool:
 	return true
 
 # Deletes a directory and everything inside it (recursive).
-# With this tree model, removing the directory entry removes the whole subtree.
 func remove_dir_recursive(path: String) -> bool:
 	if path == "/" or path.strip_edges() == "":
 		return false

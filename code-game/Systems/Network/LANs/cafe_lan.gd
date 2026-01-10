@@ -23,7 +23,7 @@ func build(world: WorldNetwork) -> void:
 	world.register_network(cafe, "cafe")
 
 # --- MINIGAME ATTRIBUTES --- #
-	cafe.network_password = "Beans"
+	cafe.network_password = ""
 	cafe.was_hacked = false
 
 
