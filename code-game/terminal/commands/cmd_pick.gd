@@ -23,12 +23,12 @@ func get_category() -> String:
 	return "DEBUG"
 
 
-func run(args: Array[String], terminal: Terminal) -> Array[String]:
-	if args.size() < 2:
+func run(_args: Array[String], _terminal: Terminal) -> Array[String]:
+	if _args.size() < 2:
 		return ["pick: missing args. usage: " + get_usage()]
 
-	var row := int(args[0])
-	var col := int(args[1])
+	var row := int(_args[0])
+	var col := int(_args[1])
 
 	# Find the minigame manager (autoload or root child)
 	var mgr := _find_minigame_manager()

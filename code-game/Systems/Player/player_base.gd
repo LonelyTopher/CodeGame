@@ -29,7 +29,6 @@ func xp_to_next_level(_lv: int) -> int:
 func add_player_xp(amount: int) -> void:
 	if amount <= 0:
 		return
-
 	if level >= MAX_PLAYER_LEVEL:
 		return
 
@@ -58,7 +57,6 @@ func add_currency(type: int, amount: float) -> void:
 	if not currencies.has(type):
 		push_error("Currency does not exist: " + currency_name(type))
 		return
-
 	if amount == 0.0:
 		return
 
@@ -68,10 +66,8 @@ func add_currency(type: int, amount: float) -> void:
 func spend_currency(type: int, amount: float) -> bool:
 	if not currencies.has(type):
 		return false
-
 	if amount <= 0.0:
 		return false
-
 	if currencies[type] < amount:
 		return false
 
@@ -91,20 +87,44 @@ func build_currency_state() -> Dictionary:
 func apply_currency_state(state: Dictionary) -> void:
 	for n in state.keys():
 		var amount := float(state[n])
-
 		match String(n):
 			"Dollars":
 				currencies[Currency.DOLLARS] = amount
 				emit_signal("currency_changed", Currency.DOLLARS, amount)
-
 			"Bitcoin":
 				currencies[Currency.BITCOIN] = amount
 				emit_signal("currency_changed", Currency.BITCOIN, amount)
-
 			"Ethereum":
 				currencies[Currency.ETHEREUM] = amount
 				emit_signal("currency_changed", Currency.ETHEREUM, amount)
-
 			_:
-				# Unknown currency in save (future-proofing)
 				pass
+
+func currency_from_name(name: String) -> int:
+	match name.strip_edges().to_lower():
+		"dollars", "usd", "DOLLARS", "USD":
+			return Currency.DOLLARS
+		"bitcoin", "btc", "BITCOIN", "BTC":
+			return Currency.BITCOIN
+		"ethereum", "eth", "ETHEREUM", "ETH":
+			return Currency.ETHEREUM
+		_:
+			return -1
+
+# OPTIONAL: full save chunk for PlayerBase (SaveSystem can use this later if you want)
+func to_data() -> Dictionary:
+	return {
+		"level": level,
+		"xp": xp,
+		"currencies": build_currency_state()
+	}
+
+func from_data(state: Dictionary) -> void:
+	if state.is_empty():
+		return
+	level = clamp(int(state.get("level", level)), 1, MAX_PLAYER_LEVEL)
+	xp = max(int(state.get("xp", xp)), 0)
+	var cur_state: Variant = state.get("currencies", {})
+	if typeof(cur_state) == TYPE_DICTIONARY:
+		apply_currency_state(cur_state as Dictionary)
+	emit_signal("player_xp_changed", xp, level)

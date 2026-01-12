@@ -217,33 +217,38 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 # -------------------------------------------------
 # Wait helper (no fancy OR-await in GDScript)
 # -------------------------------------------------
+# Put this helper class somewhere in cmd_ssh.gd (top or near the function)
+class _MGWaitState extends RefCounted:
+	var done: bool = false
+	var result: String = "closed"
+
 func _await_minigame_result(mg: Object, tree: SceneTree) -> String:
-	var done := false
-	var result := "closed"
+	var st := _MGWaitState.new()
 
+	# Connect signals -> flip shared state object
 	if mg.has_signal("crack_success"):
-		mg.connect("crack_success", Callable(self, "_on_mg_success").bind([mg, tree, [done, result]]))
+		mg.connect("crack_success", func():
+			st.done = true
+			st.result = "success"
+		)
 
-	# We can’t directly bind by-ref primitives, so we’ll use closures via local vars:
-	# Instead: connect to local lambdas and set outer vars (works in Godot 4).
-	mg.connect("crack_success", func():
-		done = true
-		result = "success"
-	)
-	mg.connect("crack_failed", func():
-		done = true
-		result = "failed"
-	)
-	mg.connect("crack_closed", func():
-		done = true
-		result = "closed"
-	)
+	if mg.has_signal("crack_failed"):
+		mg.connect("crack_failed", func():
+			st.done = true
+			st.result = "failed"
+		)
 
-	while not done:
+	if mg.has_signal("crack_closed"):
+		mg.connect("crack_closed", func():
+			st.done = true
+			st.result = "closed"
+		)
+
+	# Wait until one of the signals fires
+	while not st.done:
 		await tree.process_frame
 
-	return result
-
+	return st.result
 
 # -------------------------------------------------
 # Meta helpers (avoid Variant inference warnings)

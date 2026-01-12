@@ -38,7 +38,7 @@ const HINT_FLASH_SECONDS := 0.55
 
 # --- XP routing ---
 const HACKING_STAT_ID_PRIMARY := "hacking"
-const HACKING_STAT_ID_FALLBACKS := ["hack", "intrusion", "exploit"] # used only if you named it differently
+const HACKING_STAT_ID_FALLBACKS := ["hack", "intrusion", "exploit"]
 
 
 static func _letter_token(ch: String) -> String:
@@ -57,7 +57,7 @@ var target_ip: String = "--"
 var difficulty_tier := 1
 var attempts_left := DEFAULT_ATTEMPTS
 
-# Password is authored (from target device)
+# Password is authored (from target device / dir lock)
 var _password := ""
 var _mask: Array[String] = []
 var _reveal_index := 0
@@ -88,7 +88,7 @@ var _hint_token_id := -1
 var _hint_timer_running := false
 
 # for success/fail routing
-var _target_obj: Object = null
+var _target_obj: Variant = null
 var _p_target_is_device := false
 
 # xp bookkeeping for post-minigame animation
@@ -107,7 +107,7 @@ func _bb_escape(s: String) -> String:
 # ------------------------------------------------------------
 func setup_and_generate(
 	p_terminal: Terminal,
-	p_target: Object,
+	p_target: Variant,
 	p_hack_chance: float = 0.99,
 	p_source: Device = null,
 	p_attempts: int = DEFAULT_ATTEMPTS
@@ -154,7 +154,6 @@ func setup_and_generate(
 	_password = _get_target_password(p_target)
 	if _password == "":
 		_password = "ADMIN"
-
 	_password = _sanitize_password(_password)
 
 	_mask.clear()
@@ -176,25 +175,38 @@ func setup_and_generate(
 	_build_grid()
 	_print_block()
 
-	screen.append_line("Type: pick <row> <col>   (example: pick 3 44)")
-	screen.append_line("Type: close              (to exit minigame)")
+	# Updated instructions: typing is allowed, clicking is still allowed.
+	screen.append_line("Click tokens OR type the password to attempt authentication.")
+	screen.append_line("Type: close   (to exit minigame)")
 
 	_is_generated = true
 	_start_cursor_blink()
 
 
 # Accept either:
+# - crack target dict: {"kind":"dir_lock","path":"/system"} -> filesystem credential_id
 # - target is Device with network_password
 # - target has .device which is Device with network_password
-func _get_target_password(p_target: Object) -> String:
+func _get_target_password(p_target: Variant) -> String:
 	if p_target == null:
 		return ""
+
+	# Dir-lock crack mode (dictionary target)
+	if p_target is Dictionary:
+		var d := p_target as Dictionary
+		if String(d.get("kind", "")) == "dir_lock":
+			if terminal != null and terminal.fs != null and terminal.fs.has_method("get_lock_credential_id"):
+				return String(terminal.fs.call("get_lock_credential_id", String(d.get("path", ""))))
+			return String(d.get("password", ""))
+
+	# Network / device targets (duck-typed objects)
 	if "network_password" in p_target:
 		return str(p_target.get("network_password"))
 	if "device" in p_target:
-		var d = p_target.get("device")
-		if d != null and ("network_password" in d):
-			return str(d.get("network_password"))
+		var dev = p_target.get("device")
+		if dev != null and ("network_password" in dev):
+			return str(dev.get("network_password"))
+
 	return ""
 
 
@@ -214,6 +226,8 @@ func _sanitize_password(s: String) -> String:
 # ------------------------------------------------------------
 # Terminal input
 # ------------------------------------------------------------
+# "close"/"exit" closes.
+# Anything else: treat as password guess.
 func handle_terminal_line(line: String) -> bool:
 	var t := line.strip_edges()
 	if t == "":
@@ -225,20 +239,39 @@ func handle_terminal_line(line: String) -> bool:
 		close()
 		return true
 
-	var parts := t.split(" ", false)
-	if parts.size() == 3 and parts[0].to_lower() == "pick":
-		var r := int(parts[1])
-		var c := int(parts[2])
+	# Treat everything else as a guess
+	var guess_raw := t
+	var guess := _sanitize_password(guess_raw)
 
-		_last_input = "pick %d %d" % [r, c]
-		var result_key := _pick_cell_internal(r, c)
-		_status = _trace_line(result_key, _last_input)
+	_last_input = guess_raw
+
+	if guess == "":
+		_status = "TRACE: > %s  → invalid (type password | close)%s" % [_last_input, _cursor_char()]
 		_rerender_header_only()
-		_render_grid_row(r)
 		return true
 
-	_last_input = t
-	_status = "TRACE: > %s  → invalid (use: pick <row> <col> | close)%s" % [_last_input, _cursor_char()]
+	# Correct
+	if guess == _password:
+		_status = "TRACE: > %s  → ACCESS GRANTED%s" % [_last_input, _cursor_char()]
+		_rerender_header_only()
+		emit_signal("crack_success")
+		return true
+
+	# Wrong
+	attempts_left -= 1
+	_wrong_streak += 1
+
+	if _wrong_streak >= WRONGS_FOR_HINT and attempts_left > 0:
+		_wrong_streak = 0
+		_trigger_hint_for_next_letter()
+
+	if attempts_left <= 0:
+		_status = "TRACE: > %s  → LOCKED OUT%s" % [_last_input, _cursor_char()]
+		_rerender_header_only()
+		emit_signal("crack_failed")
+		return true
+
+	_status = "TRACE: > %s  → wrong (attempts=%d)%s" % [_last_input, attempts_left, _cursor_char()]
 	_rerender_header_only()
 	return true
 
@@ -282,6 +315,7 @@ func handle_mouse_move(local_pos: Vector2, output: RichTextLabel, scroll: Scroll
 	return true
 
 
+# ✅ Re-enabled: clicking behaves like "pick row col" used to.
 func handle_mouse_click(local_pos: Vector2, output: RichTextLabel, scroll: ScrollContainer) -> bool:
 	if not _is_generated or _block_base_line < 0:
 		return false
@@ -293,7 +327,7 @@ func handle_mouse_click(local_pos: Vector2, output: RichTextLabel, scroll: Scrol
 	var row := rc.x
 	var col := rc.y
 
-	_last_input = "pick %d %d" % [row, col]
+	_last_input = "click %d %d" % [row, col]
 	var result_key := _pick_cell_internal(row, col)
 	_status = _trace_line(result_key, _last_input)
 
@@ -303,7 +337,7 @@ func handle_mouse_click(local_pos: Vector2, output: RichTextLabel, scroll: Scrol
 
 
 # ------------------------------------------------------------
-# Picking logic
+# Picking logic (click tokens)
 # ------------------------------------------------------------
 func _pick_cell_internal(row: int, col: int) -> String:
 	if attempts_left <= 0:
@@ -333,7 +367,9 @@ func _pick_cell_internal(row: int, col: int) -> String:
 	return "junk"
 
 
+# ------------------------------------------------------------
 # Manual close
+# ------------------------------------------------------------
 func close() -> void:
 	_is_generated = false
 	_status = "TRACE: > closed"
@@ -358,7 +394,6 @@ func _close_modal_silent() -> void:
 func _on_crack_success() -> void:
 	_close_modal_silent()
 	_success_flow()
-
 
 func _on_crack_failed() -> void:
 	_close_modal_silent()
@@ -386,7 +421,6 @@ func _success_flow() -> void:
 
 	_apply_success_connection()
 
-	# ✅ NEW: show XP gained (after applying success so it’s accurate)
 	if _last_xp_awarded > 0:
 		await tree.create_timer(0.10).timeout
 		_print_main(">> hacking.xp awarded: +%d" % _last_xp_awarded)
@@ -402,10 +436,10 @@ func _fail_flow() -> void:
 
 	_print_main("")
 
-	# Award 1 XP ONLY for lockout / failed minigame attempt (your request)
+	# Award 1 XP ONLY for failed attempt / lockout vibe
 	_last_xp_awarded = _award_hacking_xp(1)
 
-	# WIFI: auth fail (NOT a “lockout” vibe, but still a failed attempt)
+	# WIFI: auth fail
 	if _is_network_target(_target_obj) and not _p_target_is_device:
 		_print_main(">> authentication failed")
 		await tree.create_timer(0.20).timeout
@@ -414,7 +448,7 @@ func _fail_flow() -> void:
 		_print_main(">> hacking.xp awarded: +%d" % _last_xp_awarded)
 		return
 
-	# SSH / Device: harsher failure vibe
+	# SSH / Device / Dir-lock: harsher failure vibe
 	_print_main(">> exploit rejected")
 	await tree.create_timer(0.20).timeout
 	_print_main(">> attempts exhausted")
@@ -452,13 +486,11 @@ func _resolve_hacking_stat_id(stats_system: Node) -> String:
 	if stats_system.has_method("has_stat") and stats_system.call("has_stat", HACKING_STAT_ID_PRIMARY):
 		return HACKING_STAT_ID_PRIMARY
 
-	# fallback tries only if you named it differently
 	if stats_system.has_method("has_stat"):
 		for sid in HACKING_STAT_ID_FALLBACKS:
 			if stats_system.call("has_stat", sid):
 				return sid
 
-	# default (will just award 0 if missing)
 	return HACKING_STAT_ID_PRIMARY
 
 
@@ -473,7 +505,6 @@ func _award_hacking_xp(amount: int) -> int:
 	var stat_id := _resolve_hacking_stat_id(ss)
 
 	if ss.has_method("award_xp"):
-		# StatsSystem.award_xp returns gained after diminishing returns
 		return int(ss.call("award_xp", stat_id, int(amount)))
 
 	return 0
@@ -495,7 +526,6 @@ func _award_xp_for_device(dev: Object) -> int:
 	var award := xp_repeat if already else xp_first
 	var gained := _award_hacking_xp(award)
 
-	# Mark device as hacked
 	if "was_hacked" in dev:
 		dev.set("was_hacked", true)
 	else:
@@ -528,17 +558,28 @@ func _get_int_field(o: Object, field: String, fallback: int = 0) -> int:
 
 
 # ------------------------------------------------------------
-# Connection application (SSH vs Network)
+# Success application (SSH vs Network vs Dir-lock)
 # ------------------------------------------------------------
 func _apply_success_connection() -> void:
-	# ------------------------------------------------------------
+	# DIR LOCK TARGET (Dictionary)
+	if _target_obj is Dictionary:
+		var d := _target_obj as Dictionary
+		if String(d.get("kind", "")) == "dir_lock":
+			_last_xp_awarded = _award_hacking_xp(5)
+
+			var p := String(d.get("path", ""))
+			if terminal != null and terminal.fs != null and terminal.fs.has_method("unlock_dir"):
+				terminal.fs.call("unlock_dir", p, _password)
+				_print_main(">> directory unlocked: %s" % p)
+			else:
+				_print_main(">> directory unlocked")
+			return
+
 	# SSH TARGET (Device)
-	# ------------------------------------------------------------
 	if _p_target_is_device:
 		var dev_for_xp := _extract_device(_target_obj)
 		_last_xp_awarded = _award_xp_for_device(dev_for_xp)
 
-		# Keep existing success behavior
 		if terminal != null and terminal.has_method("on_minigame_success"):
 			terminal.call("on_minigame_success", {"target": _target_obj, "target_ip": target_ip})
 			return
@@ -552,28 +593,21 @@ func _apply_success_connection() -> void:
 		_print_main(">> connection established")
 		return
 
-	# ------------------------------------------------------------
 	# WIFI / NETWORK TARGET
-	# ------------------------------------------------------------
 	if _is_network_target(_target_obj) and source_device != null:
 		if source_device.has_method("detach_from_network") and source_device.has_method("attach_to_network"):
-			# Detach old network (if any)
 			if "network" in source_device and source_device.get("network") != null:
 				source_device.call("detach_from_network")
 
-			# Attach to new network (assigns IP)
 			source_device.call("attach_to_network", _target_obj)
 
-			# ✅ Award XP for network
 			_last_xp_awarded = _award_xp_for_network(_target_obj)
 
-			# Mark network hacked (password remembered)
 			if "was_hacked" in _target_obj:
 				_target_obj.set("was_hacked", true)
 			else:
 				_target_obj.set_meta("was_hacked", true)
 
-			var ssid := _get_field_str(_target_obj, "name", "unknown-ssid")
 			var subnet := _get_field_str(_target_obj, "subnet", "--")
 			var new_ip := _get_dev_field_str(source_device, "ip_address", "--")
 			var ip_prefix := _ip_prefix_24(new_ip)
@@ -582,26 +616,9 @@ func _apply_success_connection() -> void:
 			_print_main("Network: %s" % subnet)
 			_print_main("Assigned IP address: %s" % new_ip)
 			_print_main("")
-
-			var vendor := _get_field_str(_target_obj, "vendor", "unknown")
-			var notes := _get_field_str(_target_obj, "notes", "none")
-			var visibility := _get_field_str(_target_obj, "visibility", "Public")
-			var security := _get_field_str(_target_obj, "security", _get_field_str(_target_obj, "encryption", "OPEN"))
-			var bssid := _get_field_str(_target_obj, "bssid", "--")
-			var channel := _get_field_str(_target_obj, "channel", _get_field_str(_target_obj, "chan", "--"))
-			var mode := _get_field_str(_target_obj, "mode", "--")
-
-			_print_main(">> ssid..............: %s" % ssid)
-			_print_main(">> bssid.............: %s" % bssid)
-			_print_main(">> vendor............: %s" % vendor)
-			_print_main(">> security..........: %s" % security)
-			_print_main(">> radio.mode........: %s" % mode)
-			_print_main(">> radio.channel.....: %s" % channel)
 			_print_main(">> dhcp.lease........: granted")
 			_print_main(">> route.default.....: %s" % (("%s.1" % ip_prefix) if ip_prefix != "" else "assigned"))
 			_print_main(">> dns.server........: %s" % (("%s.1" % ip_prefix) if ip_prefix != "" else "auto"))
-			_print_main(">> network.visibility: %s" % visibility)
-			_print_main(">> network.notes.....: %s" % notes)
 			_print_main(">> hint: run 'arp' to discover devices on this network.")
 			return
 
@@ -625,41 +642,40 @@ func _enter_remote_session(dev: Object) -> void:
 		terminal.call("set_current_device", dev)
 
 
-func _is_device_target(t: Object) -> bool:
+func _is_device_target(t: Variant) -> bool:
 	if t == null:
 		return false
 	if t is Device:
 		return true
-	if "device" in t:
+	if typeof(t) == TYPE_OBJECT and ("device" in t):
 		var d = t.get("device")
 		return (d != null)
 	return false
 
 
-func _extract_device(t: Object) -> Object:
+func _extract_device(t: Variant) -> Object:
 	if t == null:
 		return null
 	if t is Device:
 		return t
-	if "device" in t:
+	if typeof(t) == TYPE_OBJECT and ("device" in t):
 		return t.get("device")
 	return null
 
 
-# identify network-ish targets safely
-func _is_network_target(t: Object) -> bool:
+func _is_network_target(t: Variant) -> bool:
 	if t == null:
 		return false
-	if "subnet" in t:
-		return true
-	if "ssid" in t:
-		return true
-	if "name" in t and "network_password" in t:
-		return true
+	if typeof(t) == TYPE_OBJECT:
+		if "subnet" in t:
+			return true
+		if "ssid" in t:
+			return true
+		if "name" in t and "network_password" in t:
+			return true
 	return false
 
 
-# generic field getter
 func _get_field_str(o: Object, field: String, fallback: String = "--") -> String:
 	if o == null:
 		return fallback
@@ -831,12 +847,16 @@ func _header_line_4() -> String:
 
 
 # ------------------------------------------------------------
-# Token effects
+# Token effects (click gameplay)
 # ------------------------------------------------------------
 func _click_letter_token(token_id: int, t: Dictionary) -> String:
 	var letter := str(t.get("letter", ""))
 	if letter == "":
 		return "junk"
+
+	# if already completed, ignore
+	if _reveal_index >= _password.length():
+		return "used"
 
 	var needed := _password.substr(_reveal_index, 1)
 
@@ -990,6 +1010,7 @@ func _ensure_remaining_password_letters_present() -> void:
 		if int(unused_counts.get(need, 0)) > 0:
 			continue
 
+		# revive a used token of the needed letter
 		for id in _tokens.keys():
 			var tid := int(id)
 			var t: Dictionary = _tokens[tid]
@@ -1020,6 +1041,7 @@ func _start_cursor_blink() -> void:
 		return
 	_cursor_task_running = true
 	_cursor_blink_loop()
+
 
 func _cursor_blink_loop() -> void:
 	var tree := Engine.get_main_loop() as SceneTree
@@ -1101,6 +1123,7 @@ func _get_rtl_left_padding(output: RichTextLabel) -> float:
 		if output.has_theme_constant(c):
 			return float(output.get_theme_constant(c))
 	return 0.0
+
 
 func _get_rtl_top_padding(output: RichTextLabel) -> float:
 	var candidates := ["margin_top", "content_margin_top", "padding_top"]
@@ -1352,4 +1375,3 @@ func _is_letter_needed_in_remaining_password(letter: String) -> bool:
 		if _password.substr(i, 1) == letter:
 			return true
 	return false
- 

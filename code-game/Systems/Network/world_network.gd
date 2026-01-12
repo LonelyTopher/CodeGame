@@ -8,9 +8,8 @@ var player_device: Device
 var current_device: Device
 var networks: Array[Network] = []
 
-# Optional lookups (super handy later)
-var networks_by_id: Dictionary = {}      # "homenet" -> Network
-var networks_by_ssid: Dictionary = {}    # "HomeNet" -> Network
+var networks_by_id: Dictionary = {}
+var networks_by_ssid: Dictionary = {}
 
 func _ready() -> void:
 	_reload_all_lans()
@@ -46,13 +45,10 @@ func _reload_all_lans() -> void:
 				f = dir.get_next()
 				continue
 
-			# LAN script registers its network(s) & devices
 			inst.build(self)
-
 		f = dir.get_next()
 	dir.list_dir_end()
 
-	# If LAN scripts didn't set it, default to player
 	if current_device == null and player_device != null:
 		current_device = player_device
 
@@ -94,7 +90,30 @@ func get_network_by_id(id: String) -> Network:
 	return networks_by_id.get(id, null)
 
 # -------------------------
-# Save/load: player device identity
+# NEW: Convenience lookups for SaveSystem
+# -------------------------
+func get_all_devices_by_mac() -> Dictionary:
+	var out: Dictionary = {}
+	for n in networks:
+		if n == null:
+			continue
+		for d in n.devices:
+			if d == null:
+				continue
+			var m := String(d.mac)
+			if m != "":
+				out[m] = d
+	return out
+
+func rebuild_network_ip_maps() -> void:
+	for n in networks:
+		if n == null:
+			continue
+		if n.has_method("rebuild_assigned_ips_from_devices"):
+			n.rebuild_assigned_ips_from_devices()
+
+# -------------------------
+# Save/load: player device identity (still supported)
 # -------------------------
 func get_player_device_state() -> Dictionary:
 	if player_device == null:

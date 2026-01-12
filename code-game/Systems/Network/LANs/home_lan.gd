@@ -51,11 +51,30 @@ func build(world: WorldNetwork) -> void:
 
 	home.attach_router(router)
 
-	# -----------------------------
-	# Player laptop
-	# -----------------------------
-	var laptop := PlayerHomeComputer.new()
-	laptop.attach_to_network(home)
 
+	# Player laptop
+
+	var laptop := Device.new()
+
+	# --- Identity --- #
+	laptop.mac = "3C:52:82:9A:4F:B1"
+	
+	# --- Dirs First --- #
+	laptop.fs.mkdir("/home")
+	laptop.fs.mkdir("/system")
+	laptop.fs.touch("/system/should-be-hidden-data.dat")
+	
+	laptop.fs.lock_dir("/system", "password")
+	
+	# --- Files --- #
+	laptop.fs.write_data_file("/home/money.dat",{
+		"currency": "DOLLARS",
+		"amount": 500.00,
+		"owner": laptop.hostname
+	})
+	
+	
+	# --- Attach to network --- #
+	laptop.attach_to_network(home)
 	world.register_player_device(laptop)
 	world.set_current_device(laptop)

@@ -147,8 +147,7 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 
 	# root header
 	var root_name := _display_name(root_path)
-	var root_display := "*" + root_name
-	root_display = _maybe_color_dir(root_display, no_color)
+	var root_display := _format_dir_name(terminal, root_path, root_name, no_color)
 	lines.append(root_display)
 	counts["dirs"] = 1
 
@@ -207,8 +206,27 @@ func _maybe_color_dir(s: String, no_color: bool) -> String:
 		return s
 	return "[color=lime]" + s + "[/color]"
 
+func _maybe_color_locked_dir(s: String, no_color: bool) -> String:
+	if no_color:
+		return s
+	return "[color=red]" + s + "[/color]"
+
+func _is_locked_dir(terminal: Terminal, abs_path: String) -> bool:
+	if terminal == null or terminal.fs == null:
+		return false
+	if terminal.fs.has_method("is_locked"):
+		return terminal.fs.is_locked(abs_path)
+	return false
+
+func _format_dir_name(terminal: Terminal, abs_path: String, shown_name: String, no_color: bool) -> String:
+	# locked dirs: !DirName (red)
+	if _is_locked_dir(terminal, abs_path):
+		return _maybe_color_locked_dir("!" + shown_name, no_color)
+
+	# normal dirs: *DirName (lime)
+	return _maybe_color_dir("*" + shown_name, no_color)
+
 func _file_size_bytes(terminal: Terminal, path: String) -> int:
-	# "size" = length of file content in bytes (good enough for your virtual FS)
 	var txt := terminal.fs.read_file(path)
 	return txt.to_utf8_buffer().size()
 
@@ -218,7 +236,6 @@ func _matches(re: RegEx, name: String) -> bool:
 	return re.search(name) != null
 
 func _glob_to_regex(glob: String) -> RegEx:
-	# supports * and ? (simple glob)
 	var escaped := ""
 	for ch in glob:
 		match ch:
@@ -246,15 +263,10 @@ func _child_path(dir_path: String, name: String) -> String:
 func _is_hidden_or_system(dir_path: String, name: String, show_all: bool) -> bool:
 	if show_all:
 		return false
-
-	# Hide dotfiles unless -a
 	if name.begins_with("."):
 		return true
-
-	# Hide system root dirs unless -a (only when listing the root "/")
 	if dir_path == "/" and SYSTEM_ROOT_DIRS.has(name):
 		return true
-
 	return false
 
 func _build_tree(
@@ -295,7 +307,6 @@ func _build_tree(
 				files.append(n)
 		names = dirs + files
 	else:
-		# still need to filter hidden/system before later logic
 		var filtered: Array[String] = []
 		for n in names:
 			if _is_hidden_or_system(dir_path, n, show_all):
@@ -314,13 +325,10 @@ func _build_tree(
 		if dirs_only and not is_dir:
 			continue
 		if files_only and is_dir:
-			# we still want to traverse into dirs even if we don't print them,
-			# but whether we traverse is handled later.
 			continue
 
 		final.append(n)
 
-	# When NOT files_only, we print from final list (dirs + files or dirs only)
 	for idx in range(final.size()):
 		var name := final[idx]
 		var is_last := (idx == final.size() - 1)
@@ -337,21 +345,22 @@ func _build_tree(
 		if full_paths:
 			shown_name = cp
 
-		# decorate
 		if is_dir:
-			shown_name = "*" + shown_name
-			shown_name = _maybe_color_dir(shown_name, no_color)
+			var rendered := _format_dir_name(terminal, cp, shown_name, no_color)
+			lines.append(prefix + branch + rendered)
 			counts["dirs"] = int(counts.get("dirs", 0)) + 1
 		else:
 			if show_sizes:
 				var sz := _file_size_bytes(terminal, cp)
 				shown_name = "%s (%d B)" % [shown_name, sz]
+			lines.append(prefix + branch + shown_name)
 			counts["files"] = int(counts.get("files", 0)) + 1
 
-		lines.append(prefix + branch + shown_name)
-
-		# descend if dir
+		# descend if dir (BUT: locked dirs do NOT reveal contents)
 		if is_dir:
+			if _is_locked_dir(terminal, cp):
+				continue
+
 			var next_prefix := ""
 			if ascii:
 				next_prefix = prefix + ("    " if is_last else "|   ")
@@ -360,32 +369,17 @@ func _build_tree(
 			_build_tree(lines, terminal, cp, next_prefix, depth + 1, max_depth, show_all, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
 
 	# Special handling for files_only: traverse directories even though we didn't print them.
+	# BUT: locked dirs should still be treated as opaque.
 	if files_only:
 		var dir_names := terminal.fs.list_dir(dir_path)
 		dir_names.sort()
 
-		if dirs_first:
-			var ds: Array[String] = []
-			var fs: Array[String] = []
-			for n in dir_names:
-				if _is_hidden_or_system(dir_path, n, show_all):
-					continue
-				var cp := _child_path(dir_path, n)
-				if terminal.fs.is_dir(cp):
-					ds.append(n)
-				else:
-					fs.append(n)
-			dir_names = ds + fs
-		else:
-			var filtered_dirs: Array[String] = []
-			for n in dir_names:
-				if _is_hidden_or_system(dir_path, n, show_all):
-					continue
-				filtered_dirs.append(n)
-			dir_names = filtered_dirs
-
 		for n in dir_names:
-			var cp2 := _child_path(dir_path, n)
-			if terminal.fs.is_dir(cp2):
-				# traverse regardless of pattern; pattern applies to printed entries
-				_build_tree(lines, terminal, cp2, prefix, depth + 1, max_depth, show_all, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
+			if _is_hidden_or_system(dir_path, n, show_all):
+				continue
+
+			var cp3 := _child_path(dir_path, n)
+			if terminal.fs.is_dir(cp3):
+				if _is_locked_dir(terminal, cp3):
+					continue
+				_build_tree(lines, terminal, cp3, prefix, depth + 1, max_depth, show_all, dirs_only, files_only, full_paths, dirs_first, no_color, ascii, show_sizes, re, counts)
