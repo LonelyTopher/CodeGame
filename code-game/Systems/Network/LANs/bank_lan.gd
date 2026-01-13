@@ -11,7 +11,7 @@ func build(world: WorldNetwork) -> void:
 		"A9:22:F0:CC:01:99"   # router MAC
 	)
 
-	bank.name = "bank_core_LAN"
+	bank.name = "Kurosawa-Checking-WiFi"
 	bank.vendor = "DeimosNine-Security"
 	bank.notes = "Internal operations network (legacy access points detected)"
 	bank.visibility = "private"
@@ -59,19 +59,72 @@ func build(world: WorldNetwork) -> void:
 	bos.hack_xp_repeat = 3
 	bos.was_hacked = false
 
-
 # --- Filesystem layout --- #
-
+# ---- DIRECTORIES ---- #
 	# Home + staff areas
 	bos.fs.mkdir("/home")
 	bos.fs.mkdir("/home/bos")
+	bos.fs.mkdir("/home/bos/employees")
+	bos.fs.mkdir("/home/bos/accounts")
 
-# Ops / internal users (juicier)
+# --- SYSTEM DIRECTORIES --- #
 	bos.fs.mkdir("/home/accounts")
 
-# System-ish dirs (good for realism + logs)
+# ---- SYSTEM DIRS ---- #
 	bos.fs.mkdir("/system")
+	bos.fs.lock_dir("/system", "Kurosawa01Admin")
 	bos.fs.mkdir("/server")
+	bos.fs.lock_dir("/server", "SecurityAdmin1")
+	bos.fs.mkdir("/server/accounts")
 
+# ---- FRONT END FILES ---- #
+	bos.fs.write_file("/home/bos/employees/employee-list.txt",
+	"Daniel Kurosawa -- age 34 -- employed since 2066 -- Founder         -- EID: Ks313953\n" +
+	"Nathen Kurosawa -- age 38 -- employed since 2066 -- Co. Founder     -- EID: Ks313954\n" +
+	"Emily Kurosawa  -- age 30 -- employed since 2071 -- Partner         -- EID: Ks313955\n" +
+	"Adrian Volkov   -- age 28 -- employed since 2069 -- Branch Manager	-- EID: Ks386235\n" +
+	"Simone Kessler  -- age 36 -- employed since 2071 -- Sr. Teller		-- EID: Ks348261\n" +
+	"Marcus Liang    -- age 27 -- employed since 2076 -- Teller			-- EID: Ks394253\n" +
+	"Evelyn Stratton -- age 38 -- employed since 2075 -- Receptionist	-- EID: Ks377456\n"
+	)
+
+# ---- BACK END FILES ---- #
+	bos.fs.write_data_file("/server/accounts/Lina_Kovac.dat",
+	{
+		"balances": { "DOLLARS": 500.0 },
+		"owner": "Lina Kovac"
+	}
+)
+	bos.fs.write_data_file("/server/accounts/Jax_Moreno.dat",
+	{
+		"balances": { "DOLLARS": 1272.63 },
+		"owner": "Jax Moreno"
+	}
+)
+	bos.fs.write_data_file("/server/accounts/Marcus_Hale.dat",
+	{
+		"balances": { "DOLLARS": 1684.81 },
+		"owner": "Marcus Hale"
+	}
+)
+	bos.fs.write_data_file("/server/accounts/Cole_Navarro.dat",
+	{
+		"balances": { "BITCOIN": 0.006518,
+					  "DOLLARS": 872.75 },
+		"owner": "Cole Navarro"
+	}
+)
+	bos.fs.write_data_file("/server/accounts/Daniel_Kurosawa.dat",
+	{
+		"balances": { "DOLLARS": 271698.21,
+					  "BITCOIN": 3.171301 },
+		"owner": "Daniel Kurosawa"
+	}
+)
+	bos.fs.write_data_file("/server/accounts/Sloane_Meyer.dat",
+	{
+		"balances": { "DOLLARS": 12627.31 }
+	}
+)
 
 	bos.attach_to_network(bank)

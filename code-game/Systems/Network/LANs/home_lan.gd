@@ -7,7 +7,7 @@ func build(world: WorldNetwork) -> void:
 		"HomeNet",
 		"WPA2-PSK",
 		11,
-		"D0:37:45:8A:6C:19"
+		"A4:5E:60:12:9A:00"
 	)
 	home.vendor = "Generic Home Router"
 	home.notes = "Player home base LAN"
@@ -24,6 +24,7 @@ func build(world: WorldNetwork) -> void:
 	# Home Router (forced .1)
 	# -----------------------------
 	var router: Device = Device.new()
+	router.mac = "A4:5E:60:12:9A:01"
 	router.hostname = "Eero Device"
 	router.hack_chance = 100.0
 	router.hack_xp_first = 0
@@ -45,10 +46,6 @@ func build(world: WorldNetwork) -> void:
 	router.netmask = "255.255.255.0" # optional; or leave "--"
 	router.online = true             # if you have it
 
-	# Optional flavor (only if you have these fields)
-	# router.vendor = "Eero"
-	# router.notes = "Gateway / DHCP / NAT"
-
 	home.attach_router(router)
 
 
@@ -57,7 +54,7 @@ func build(world: WorldNetwork) -> void:
 	var laptop := Device.new()
 
 	# --- Identity --- #
-	laptop.mac = "3C:52:82:9A:4F:B1"
+	laptop.mac = "3C:5A:B4:44:10:01"
 	
 	# --- Dirs First --- #
 	laptop.fs.mkdir("/home")

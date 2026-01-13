@@ -25,6 +25,16 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.size() != 3:
 		return ["usage: " + get_usage()]
 
+	# Block cashout inside remote sessions
+	# Local = only player device on the stack
+	if terminal != null and ("device_stack" in terminal):
+		var st = terminal.get("device_stack")
+		if st is Array and st.size() > 1:
+			return [
+				"cashout: denied (remote session)",
+				"hint: type 'exit' to return to your local device first"
+			]
+
 	var path := args[0]
 	var requested_currency_raw := String(args[1]).strip_edges()
 	var requested_currency := requested_currency_raw.to_upper()
