@@ -89,39 +89,39 @@ func build(world: WorldNetwork) -> void:
 	)
 
 # ---- BACK END FILES ---- #
-	bos.fs.write_data_file("/server/accounts/Lina_Kovac.dat",
+	bos.fs.write_data_file("/server/accounts/Lina_Kovac.data",
 	{
 		"balances": { "DOLLARS": 500.0 },
 		"owner": "Lina Kovac"
 	}
 )
-	bos.fs.write_data_file("/server/accounts/Jax_Moreno.dat",
+	bos.fs.write_data_file("/server/accounts/Jax_Moreno.data",
 	{
 		"balances": { "DOLLARS": 1272.63 },
 		"owner": "Jax Moreno"
 	}
 )
-	bos.fs.write_data_file("/server/accounts/Marcus_Hale.dat",
+	bos.fs.write_data_file("/server/accounts/Marcus_Hale.data",
 	{
 		"balances": { "DOLLARS": 1684.81 },
 		"owner": "Marcus Hale"
 	}
 )
-	bos.fs.write_data_file("/server/accounts/Cole_Navarro.dat",
+	bos.fs.write_data_file("/server/accounts/Cole_Navarro.data",
 	{
 		"balances": { "BITCOIN": 0.006518,
 					  "DOLLARS": 872.75 },
 		"owner": "Cole Navarro"
 	}
 )
-	bos.fs.write_data_file("/server/accounts/Daniel_Kurosawa.dat",
+	bos.fs.write_data_file("/server/accounts/Daniel_Kurosawa.data",
 	{
 		"balances": { "DOLLARS": 271698.21,
 					  "BITCOIN": 3.171301 },
 		"owner": "Daniel Kurosawa"
 	}
 )
-	bos.fs.write_data_file("/server/accounts/Sloane_Meyer.dat",
+	bos.fs.write_data_file("/server/accounts/Sloane_Meyer.data",
 	{
 		"balances": { "DOLLARS": 12627.31 }
 	}

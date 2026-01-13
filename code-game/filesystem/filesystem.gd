@@ -552,3 +552,58 @@ func get_lock_credential_id(path: String) -> String:
 		return ""
 	_ensure_dir_defaults(node)
 	return String(node.get("credential_id", ""))
+
+# Adds a forensic transfer trace inside the DATA dictionary.
+# This intentionally bypasses "protected" because it's a server-side audit artifact.
+func append_data_transfer_trace(path: String, dest_ip: String) -> bool:
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		return false
+
+	var name := _base_name(path)
+	var children: Dictionary = parent.get("children", {})
+	if not children.has(name):
+		return false
+
+	var node: Dictionary = children[name]
+	if node.get("type","") != "data":
+		return false
+
+	var data: Dictionary = node.get("data", {})
+	var transfers: Array = data.get("transfers", [])
+
+	# Normalize in case older files had transfers as something else
+	if typeof(transfers) != TYPE_ARRAY:
+		transfers = []
+
+	# Don’t duplicate the same IP repeatedly (optional)
+	if not transfers.has(dest_ip):
+		transfers.append(dest_ip)
+
+	data["transfers"] = transfers
+	node["data"] = data
+
+	# Write back into filesystem tree
+	children[name] = node
+	parent["children"] = children
+	return true
+
+# Force-update a DATA file (bypasses "protected"). Useful for server-side state changes.
+func force_set_data_file(path: String, new_data: Dictionary) -> bool:
+	var parent := _get_parent_dir(path)
+	if parent.is_empty():
+		return false
+
+	var name := _base_name(path)
+	var children: Dictionary = parent.get("children", {})
+	if not children.has(name):
+		return false
+
+	var node: Dictionary = children[name]
+	if node.get("type","") != "data":
+		return false
+
+	node["data"] = new_data
+	children[name] = node
+	parent["children"] = children
+	return true

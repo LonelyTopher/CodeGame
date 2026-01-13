@@ -18,7 +18,7 @@ func get_category() -> String:
 
 func get_examples() -> Array[String]:
 	return [
-		"scp 10.0.0.22:/home/accounts/balances.dat /home/loot/balances.dat",
+		"scp 10.0.0.22:/home/readme.txt /home/loot/readme.txt",
 		"scp /home/tools/payload.txt 10.0.0.22:/home/inbox/payload.txt"
 	]
 
@@ -43,7 +43,8 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if (not src_is_remote) and (not dst_is_remote):
 		return ["scp: local->local copy not supported (use cp/mv)."]
 
-	var player_dev := _get_player_device()
+	# ✅ FIX: your helper expects at least 1 arg
+	var player_dev := _get_player_device(terminal)
 	if player_dev == null:
 		return ["scp: could not locate player device (WorldNetwork.player_device missing)."]
 
@@ -55,26 +56,46 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if src_is_remote:
 		# download: remote -> local
 		var parsed := _parse_remote(src_raw)
-		remote_ip = parsed["ip"]
-		remote_path = parsed["path"]
+		remote_ip = String(parsed["ip"])
+		remote_path = String(parsed["path"])
 		local_path = dst_raw
 		upload = false
 	else:
 		# upload: local -> remote
 		var parsed2 := _parse_remote(dst_raw)
-		remote_ip = parsed2["ip"]
-		remote_path = parsed2["path"]
+		remote_ip = String(parsed2["ip"])
+		remote_path = String(parsed2["path"])
 		local_path = src_raw
 		upload = true
 
 	remote_path = _force_abs(remote_path)
 	local_path = _force_abs(local_path)
 
-	var remote_dev := _find_device_by_ip(remote_ip)
+	# ------------------------------------------------------------
+	# If we're already remoted into this host, use that device
+	# ------------------------------------------------------------
+	var remote_dev: Object = null
+
+	var cur := terminal.current_device
+	if cur != null:
+		var cur_ip := ""
+		if ("ip_address" in cur): cur_ip = String(cur.ip_address)
+		elif ("ip" in cur): cur_ip = String(cur.ip)
+		elif ("ipv4_address" in cur): cur_ip = String(cur.ipv4_address)
+		elif ("ipv4" in cur): cur_ip = String(cur.ipv4)
+		elif ("address" in cur): cur_ip = String(cur.address)
+
+		if cur_ip == remote_ip:
+			remote_dev = cur
+
+	# Otherwise, discover via WorldNetwork
+	if remote_dev == null:
+		remote_dev = _find_device_by_ip(remote_ip)
+
 	if remote_dev == null:
 		return ["scp: unknown host %s (not found on current network)" % remote_ip]
 
-	if not bool(remote_dev.online):
+	if ("online" in remote_dev) and not bool(remote_dev.online):
 		return ["scp: host %s is offline" % remote_ip]
 
 	if remote_dev.fs == null:
@@ -83,23 +104,25 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if player_dev.fs == null:
 		return ["scp: local filesystem missing"]
 
-	# Animated / realistic header (uses TerminalScreen delayed typing if available)
 	await _emit_line(terminal, ">> scp: establishing channel to %s..." % remote_ip)
 	await _emit_line(terminal, ">> key exchange: ok", 0.08)
 	await _emit_line(terminal, ">> cipher: chacha20-poly1305@openssh.com", 0.06)
 	await _emit_line(terminal, ">> compression: zlib@openssh.com", 0.06)
 
-	# Do the copy (FIX: must await because coroutine)
 	if upload:
-		var ok_up := await _copy_between_devices(
+		# upload
+		var ok_up := await _copy_files_only(
 			terminal,
 			player_dev, local_path,
 			remote_dev, remote_path,
 			"upload"
 		)
 		return ["scp: upload complete" if ok_up else "scp: upload failed"]
+
+
 	else:
-		var ok_down := await _copy_between_devices(
+		# download
+		var ok_down := await _copy_files_only(
 			terminal,
 			remote_dev, remote_path,
 			player_dev, local_path,
@@ -107,11 +130,10 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 		)
 		return ["scp: download complete" if ok_down else "scp: download failed"]
 
-
 # ------------------------------------------------------------
-# COPY CORE (supports file + data file)
+# COPY CORE (FILES ONLY)
 # ------------------------------------------------------------
-func _copy_between_devices(
+func _copy_files_only(
 	terminal: Terminal,
 	src_dev: Object, src_path: String,
 	dst_dev: Object, dst_path: String,
@@ -124,13 +146,18 @@ func _copy_between_devices(
 		await _emit_line(terminal, ">> scp: destination filesystem missing")
 		return false
 
-	var src_fs : FileSystem = src_dev.fs
-	var dst_fs : FileSystem = dst_dev.fs
+	var src_fs: FileSystem = src_dev.fs
+	var dst_fs: FileSystem = dst_dev.fs
+
+	# Reject data files explicitly
+	var src_is_data := src_fs.has_method("is_data_file") and bool(src_fs.call("is_data_file", src_path))
+	if src_is_data:
+		await _emit_line(terminal, ">> scp: error: incorrect file type (data file)")
+		await _emit_line(terminal, ">> hint: use 'xferdata' to transfer .dat / data files")
+		return false
 
 	var src_is_file := src_fs.has_method("is_file") and bool(src_fs.call("is_file", src_path))
-	var src_is_data := src_fs.has_method("is_data_file") and bool(src_fs.call("is_data_file", src_path))
-
-	if (not src_is_file) and (not src_is_data):
+	if not src_is_file:
 		await _emit_line(terminal, ">> scp: source not found: %s" % src_path)
 		return false
 
@@ -149,78 +176,43 @@ func _copy_between_devices(
 	await _emit_line(terminal, ">> transferring blocks: 66%", 0.06)
 	await _emit_line(terminal, ">> transferring blocks: 100%", 0.06)
 
-	# Data file copy
-	if src_is_data:
-		if not (src_fs.has_method("read_data_file") and dst_fs.has_method("write_data_file")):
-			await _emit_line(terminal, ">> scp: data-file copy not supported (missing methods)")
-			return false
-
-		var data: Dictionary = src_fs.call("read_data_file", src_path)
-		# Allow empty data, but still proceed
-
-		# preserve meta/protection if your FS stores it (optional)
-		var protected := false
-		var meta: Dictionary = {}
-		if src_fs.has_method("_get_node"):
-			var node: Variant = src_fs.call("_get_node", src_path)
-			if typeof(node) == TYPE_DICTIONARY:
-				protected = bool((node as Dictionary).get("protected", false))
-				var m: Variant = (node as Dictionary).get("meta", {})
-				if typeof(m) == TYPE_DICTIONARY:
-					meta = m
-
-		var ok := bool(dst_fs.call("write_data_file", dst_path, data, protected, meta))
-		await _emit_line(terminal, ">> integrity: ok (data)" if ok else ">> integrity: failed (data)")
-		return ok
-
 	# Plaintext file copy
 	if not (src_fs.has_method("read_file") and dst_fs.has_method("write_file")):
 		await _emit_line(terminal, ">> scp: plaintext copy not supported")
 		return false
 
 	var content := String(src_fs.call("read_file", src_path))
-	var ok2 := bool(dst_fs.call("write_file", dst_path, content))
-	await _emit_line(terminal, ">> integrity: ok (sha256: simulated)" if ok2 else ">> integrity: failed")
-	return ok2
+	var ok := bool(dst_fs.call("write_file", dst_path, content))
+	await _emit_line(terminal, ">> integrity: ok (sha256: simulated)" if ok else ">> integrity: failed")
+	return ok
 
 
 # ------------------------------------------------------------
-# OUTPUT: Use TerminalScreen async/delayed methods if present
+# OUTPUT
 # ------------------------------------------------------------
 func _emit_line(terminal: Terminal, line: String, fallback_delay: float = 0.10) -> void:
-	var screen : Node = null
+	var screen: Node = null
 	if terminal != null and ("screen" in terminal):
 		screen = terminal.screen
 
-	# If your TerminalScreen has a typing / delayed print function, use it
 	if screen != null:
-		# Try a few common method names (add yours here if different)
 		if screen.has_method("type_line"):
-			# expected signature: type_line(text) -> awaitable
 			await screen.call("type_line", line)
 			return
-
 		if screen.has_method("print_delayed"):
-			# expected signature: print_delayed(text) -> awaitable
 			await screen.call("print_delayed", line)
 			return
-
 		if screen.has_method("append_line_delayed"):
-			# expected signature: append_line_delayed(text) -> awaitable
 			await screen.call("append_line_delayed", line)
 			return
-
 		if screen.has_method("write_line_delayed"):
 			await screen.call("write_line_delayed", line)
 			return
-
-		# Fallback: immediate append
 		if screen.has_method("append_line"):
 			screen.call("append_line", line)
 			await _net_delay(fallback_delay)
 			return
 
-	# Last resort: no screen methods
 	await _net_delay(fallback_delay)
 
 func _net_delay(seconds: float) -> void:
@@ -276,7 +268,6 @@ func _parent_dir(path: String) -> String:
 
 	var parts: Array[String] = []
 	parts.assign(p.trim_prefix("/").split("/", false))
-
 	if parts.size() <= 1:
 		return "/"
 
@@ -290,10 +281,30 @@ func _get_autoload(name: String) -> Node:
 	var root := tree.get_root()
 	return root.get_node_or_null("/root/%s" % name)
 
-func _get_player_device() -> Object:
+# FIXED: use device_stack bottom first (local device), then fallback to World / WorldNetwork
+func _get_player_device(terminal: Terminal) -> Object:
+	# 1) Best: terminal.device_stack[0]
+	if terminal != null and ("device_stack" in terminal):
+		var st = terminal.get("device_stack")
+		if st is Array and st.size() >= 1 and st[0] != null:
+			return st[0]
+
+	# 2) Next: World.get_player_device (if you have it)
+	var w := _get_autoload("World")
+	if w != null:
+		if w.has_method("get_player_device"):
+			var pd = w.call("get_player_device")
+			if pd != null:
+				return pd
+		# some projects store it as a property
+		if ("player_device" in w) and w.player_device != null:
+			return w.player_device
+
+	# 3) Fallback: WorldNetwork.player_device
 	var wn := _get_autoload("WorldNetwork")
 	if wn != null and ("player_device" in wn) and wn.player_device != null:
 		return wn.player_device
+
 	return null
 
 func _find_device_by_ip(ip: String) -> Object:
@@ -303,17 +314,31 @@ func _find_device_by_ip(ip: String) -> Object:
 
 	var nets: Array = []
 	if wn.has_method("get_networks"):
-		nets = wn.get_networks()
-	elif wn.has("networks"):
+		nets = wn.call("get_networks")
+	elif ("networks" in wn):
 		nets = wn.networks
 
 	for n in nets:
 		if n == null:
 			continue
-		if not n.has("devices"):
-			continue
-		for d in n.devices:
-			if d != null and String(d.ip_address) == ip:
+
+		var devs: Array = []
+		if n.has_method("get_devices"):
+			devs = n.call("get_devices")
+		elif ("devices" in n):
+			devs = n.devices
+
+		for d in devs:
+			if d == null:
+				continue
+
+			var dip := ""
+			if ("ip_address" in d):
+				dip = String(d.ip_address)
+			elif ("ip" in d):
+				dip = String(d.ip)
+
+			if dip == ip:
 				return d
 
 	return null

@@ -16,6 +16,9 @@ func get_usage() -> String:
 func get_examples() -> Array[String]:
 	return ["view /home/readme.txt", "view /bank/ledger.dat", "inspect money.dat"]
 
+func get_category() -> String:
+	return "FILESYSTEM"
+
 func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if args.is_empty():
 		return ["Usage: " + get_usage()]
