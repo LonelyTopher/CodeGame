@@ -1,6 +1,9 @@
 extends CommandBase
 class_name CmdConnect
 
+const MAX_NEIGHBOR_DISTANCE := 2
+const INVALID_NEIGHBOR_ID := -1
+
 func get_name() -> String:
 	return "connect"
 
@@ -52,6 +55,30 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 	if d.network == target:
 		return ["connect: already connected to " + ssid]
 
+	# -------------------------------------------------
+	# RANGE / PROGRESSION GATE (neighbor_id distance)
+	# -------------------------------------------------
+	var target_neighbor_id: int = _get_neighbor_id_int(target, INVALID_NEIGHBOR_ID)
+	if target_neighbor_id == INVALID_NEIGHBOR_ID:
+		return ["connect: network '%s' is missing neighbor_id (cannot validate range)" % ssid]
+
+	var anchor_neighbor_id: int = INVALID_NEIGHBOR_ID
+	if d.network != null:
+		anchor_neighbor_id = _get_neighbor_id_int(d.network, INVALID_NEIGHBOR_ID)
+	else:
+		anchor_neighbor_id = _get_device_start_neighbor_id_int(d, 0) # starting anchor
+
+	# If somehow current network is missing neighbor_id, fall back to start anchor
+	if anchor_neighbor_id == INVALID_NEIGHBOR_ID:
+		anchor_neighbor_id = _get_device_start_neighbor_id_int(d, 0)
+
+	var dist: int = abs(target_neighbor_id - anchor_neighbor_id)
+	if dist > MAX_NEIGHBOR_DISTANCE:
+		return [
+			"connect: out of range for current access tier",
+			"hint: discover closer networks first (scan), or progress deeper into the network map."
+		]
+
 	# TerminalScreen access (no get_tree here)
 	var screen = terminal.screen
 	if screen == null:
@@ -90,42 +117,36 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 			var empty := "-".repeat(total - i - 1)
 			screen.replace_line(bar_index, "[%s%s]" % [filled, empty])
 
-		# Launch minigame (it will read password from the target object)
+		# Launch minigame
 		var mg := PswdCrackingMinigame.new()
 
-		# If your Network has hack_chance, tier can reflect it (optional)
 		var hack_chance: float = 0.99
 		if "hack_chance" in target:
 			hack_chance = float(target.hack_chance)
 		hack_chance = clamp(hack_chance, 0.0, 1.0)
 
-		# IMPORTANT: pass the Network as p_target so minigame pulls its password
 		mg.setup_and_generate(terminal, target, hack_chance, d, 10)
 
-		var outcome := await _await_minigame_result(mg, tree)
+		var outcome: String = await _await_minigame_result(mg, tree)
 
-		# Treat close as failure so players can't bypass auth by canceling
 		if outcome != "success":
 			return [
 				"connect: access denied (authentication failed)",
 				""
 			]
 
-		# Mark the network as hacked so future connects skip the minigame
+		# Mark hacked
 		if "was_hacked" in target:
 			target.set("was_hacked", true)
 		else:
-			# Fallback in case you're using metadata for some networks
 			target.set_meta("was_hacked", true)
 
 	# -------------------------------------------------
-	# SUCCESS PATH (either no password OR already hacked OR minigame success)
+	# SUCCESS PATH
 	# -------------------------------------------------
-	# Disconnect from current network (if any)
 	if d.network != null:
 		d.detach_from_network()
 
-	# Attach to new network (this assigns IP)
 	d.attach_to_network(target)
 
 	var lines: Array[String] = []
@@ -139,40 +160,92 @@ func run(args: Array[String], terminal: Terminal) -> Array[String]:
 
 # -------------------------------------------------
 # Minigame wait helper: returns "success" | "failed" | "closed"
+# FIX: avoid lambda capture reassignment warnings by mutating a shared Dictionary
 # -------------------------------------------------
 func _await_minigame_result(mg: Object, tree: SceneTree) -> String:
-	var done := false
-	var result := "closed"
+	var state: Dictionary = {
+		"done": false,
+		"result": "closed"
+	}
 
-	# Godot 4: lambdas can close over locals fine
 	mg.connect("crack_success", func():
-		done = true
-		result = "success"
+		state["done"] = true
+		state["result"] = "success"
 	)
 	mg.connect("crack_failed", func():
-		done = true
-		result = "failed"
+		state["done"] = true
+		state["result"] = "failed"
 	)
 	mg.connect("crack_closed", func():
-		done = true
-		result = "closed"
+		state["done"] = true
+		state["result"] = "closed"
 	)
 
-	while not done:
+	while not bool(state["done"]):
 		await tree.process_frame
 
-	return result
+	return String(state["result"])
+
+
+# -------------------------------------------------
+# neighbor_id helpers that ALWAYS return int (or default)
+# This avoids Variant inference warnings being treated as errors.
+# -------------------------------------------------
+func _get_neighbor_id_int(n: Object, default_value: int = INVALID_NEIGHBOR_ID) -> int:
+	if n == null:
+		return default_value
+
+	# Properties
+	if "neighbor_id" in n:
+		return int(n.get("neighbor_id"))
+	if "neighbor_index" in n:
+		return int(n.get("neighbor_index"))
+	if "tier" in n:
+		return int(n.get("tier"))
+	if "depth" in n:
+		return int(n.get("depth"))
+
+	# Metadata
+	if n.has_meta("neighbor_id"):
+		return int(n.get_meta("neighbor_id"))
+	if n.has_meta("neighbor_index"):
+		return int(n.get_meta("neighbor_index"))
+	if n.has_meta("tier"):
+		return int(n.get_meta("tier"))
+	if n.has_meta("depth"):
+		return int(n.get_meta("depth"))
+
+	return default_value
+
+
+func _get_device_start_neighbor_id_int(d: Object, default_value: int = 0) -> int:
+	if d == null:
+		return default_value
+
+	if "start_neighbor_id" in d:
+		return int(d.get("start_neighbor_id"))
+	if "home_neighbor_id" in d:
+		return int(d.get("home_neighbor_id"))
+	if "start_tier" in d:
+		return int(d.get("start_tier"))
+
+	if d.has_meta("start_neighbor_id"):
+		return int(d.get_meta("start_neighbor_id"))
+	if d.has_meta("home_neighbor_id"):
+		return int(d.get_meta("home_neighbor_id"))
+	if d.has_meta("start_tier"):
+		return int(d.get_meta("start_tier"))
+
+	return default_value
 
 
 # -------------------------------------------------
 # Password discovery for Network objects
-# (kept flexible because your Network class may vary)
 # -------------------------------------------------
 func _get_network_password(n: Object) -> String:
 	if n == null:
 		return ""
 
-	# Common property names
 	if "network_password" in n:
 		return str(n.get("network_password"))
 	if "password" in n:
@@ -180,7 +253,6 @@ func _get_network_password(n: Object) -> String:
 	if "passphrase" in n:
 		return str(n.get("passphrase"))
 
-	# Metadata fallback
 	if n.has_meta("network_password"):
 		return str(n.get_meta("network_password"))
 	if n.has_meta("password"):
